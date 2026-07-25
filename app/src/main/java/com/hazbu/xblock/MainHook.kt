@@ -2,6 +2,7 @@ package com.hazbu.xblock
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -18,6 +19,7 @@ import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.io.ByteArrayInputStream
 import java.net.InetAddress
+import java.lang.reflect.Method
 
 class MainHook : XposedModule() {
 
@@ -36,6 +38,7 @@ class MainHook : XposedModule() {
         hookUi(param.classLoader)
         hookWebView(param.classLoader)
         hookGameAds(param.classLoader)
+        hookIntents(param.classLoader)
     }
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
@@ -70,7 +73,6 @@ class MainHook : XposedModule() {
                 val result = chain.proceed()
                 val context = chain.thisObject as Context
                 
-                // Fetch domains from ContentProvider in background
                 Thread {
                     fetchDomainsFromProvider(context)
                 }.start()
@@ -84,7 +86,6 @@ class MainHook : XposedModule() {
 
     private fun fetchDomainsFromProvider(context: Context) {
         try {
-            Log.d("XBlock", "Fetching domains from provider...")
             val uri = Uri.parse("content://com.hazbu.xblock.provider/domains")
             val cursor = context.contentResolver.query(uri, null, null, null, null)
             
@@ -98,20 +99,16 @@ class MainHook : XposedModule() {
                 
                 dynamicDomains.clear()
                 dynamicDomains.addAll(tempSet)
-                Log.d("XBlock", "Successfully fetched ${dynamicDomains.size} domains from provider")
+                Log.d("XBlock", "Successfully fetched ${dynamicDomains.size} domains")
 
                 if (dynamicDomains.isNotEmpty()) {
                     showToast(context, "XBlock Active")
                 } else {
                     showToast(context, "XBlock: Please open app to update filters")
                 }
-            } else {
-                Log.e("XBlock", "Cursor is null, provider might be inaccessible")
-                showToast(context, "XBlock: Provider error, check settings")
             }
         } catch (e: Exception) {
             Log.e("XBlock", "Failed to fetch domains: ${e.message}")
-            showToast(context, "XBlock: IPC Error")
         }
     }
 
@@ -177,7 +174,6 @@ class MainHook : XposedModule() {
         try {
             val webViewClientClass = classLoader.loadClass("android.webkit.WebViewClient")
             
-            // Modern shouldInterceptRequest
             try {
                 val modernMethod = webViewClientClass.getDeclaredMethod("shouldInterceptRequest", 
                     classLoader.loadClass("android.webkit.WebView"), 
@@ -195,7 +191,6 @@ class MainHook : XposedModule() {
                 }
             } catch (ignored: NoSuchMethodException) {}
 
-            // Legacy shouldInterceptRequest
             try {
                 val legacyMethod = webViewClientClass.getDeclaredMethod("shouldInterceptRequest", 
                     classLoader.loadClass("android.webkit.WebView"), 
@@ -220,58 +215,64 @@ class MainHook : XposedModule() {
 
     private fun hookGameAds(classLoader: ClassLoader) {
         try {
-            // 1. Unity Ads Initialization - Force Test Mode
+            // 1. Unity Ads Initialization
             try {
                 val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
-                val initMethod = unityAdsClass.methods.find { it.name == "initialize" }
-                if (initMethod != null) {
-                    hook(initMethod).intercept { chain ->
+                unityAdsClass.methods.find { it.name == "initialize" }?.let { method ->
+                    hook(method).intercept { chain ->
                         Log.d("XBlock", "UnityAds: Forcing Test Mode")
-                        // Many signatures exist, we find the boolean parameter for testMode
                         val args = chain.args.toMutableList()
                         for (i in args.indices) {
-                            if (args[i] is Boolean) {
-                                args[i] = true // Set testMode = true
-                            }
+                            if (args[i] is Boolean) args[i] = true
                         }
-                        // Reassign args and proceed
-                        // Note: In libxposed, we might need to call invoker or just modify chain
                         chain.proceed() 
                     }
                 }
-            } catch (ignored: ClassNotFoundException) {}
+            } catch (ignored: Exception) {}
 
-            // 2. Unity Ads Show - Prevent displaying
+            // 2. Unity Ads Show
             try {
                 val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
-                val showMethod = unityAdsClass.methods.find { it.name == "show" }
-                if (showMethod != null) {
-                    hook(showMethod).intercept {
+                unityAdsClass.methods.find { it.name == "show" }?.let { method ->
+                    hook(method).intercept {
                         Log.d("XBlock", "UnityAds: Blocked show() call")
-                        null // Prevent showing
+                        null 
                     }
-                }
-            } catch (ignored: ClassNotFoundException) {}
-
-            // 3. AdUnitActivity - Auto-close full-screen activities
-            try {
-                val adUnitClass = classLoader.loadClass("com.unity3d.services.ads.adunit.AdUnitActivity")
-                val onCreateMethod = adUnitClass.getDeclaredMethod("onCreate", Bundle::class.java)
-                hook(onCreateMethod).intercept { chain ->
-                    val activity = chain.thisObject as android.app.Activity
-                    Log.d("XBlock", "UnityAds: Closing AdUnitActivity instantly")
-                    activity.finish()
-                    chain.proceed()
                 }
             } catch (ignored: Exception) {}
 
-            // 4. AppLovin - Block initialization or show
+            // 3. AdUnitActivity (Unity)
             try {
-                val alClass = classLoader.loadClass("com.applovin.sdk.AppLovinSdk")
-                val initMethod = alClass.methods.find { it.name == "initializeSdk" }
-                if (initMethod != null) {
-                    hook(initMethod).intercept {
-                        Log.d("XBlock", "AppLovin: Blocked initialization")
+                val adUnitClass = classLoader.loadClass("com.unity3d.services.ads.adunit.AdUnitActivity")
+                adUnitClass.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
+                    hook(method).intercept { chain ->
+                        val activity = chain.thisObject as android.app.Activity
+                        Log.d("XBlock", "UnityAds: Auto-closing AdUnitActivity")
+                        activity.finish()
+                        chain.proceed()
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+            // 4. AdActivity (AdMob/Google Ads)
+            try {
+                val adActivityClass = classLoader.loadClass("com.google.android.gms.ads.AdActivity")
+                adActivityClass.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
+                    hook(method).intercept { chain ->
+                        val activity = chain.thisObject as android.app.Activity
+                        Log.d("XBlock", "AdMob: Auto-closing AdActivity")
+                        activity.finish()
+                        chain.proceed()
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+            // 5. Unity Google Ads Bridge
+            try {
+                val bridgeClass = classLoader.loadClass("com.google.unity.ads.UnityRewardedAd")
+                bridgeClass.methods.find { it.name == "show" }?.let { method ->
+                    hook(method).intercept {
+                        Log.d("XBlock", "GoogleUnityAds: Blocked show() call")
                         null
                     }
                 }
@@ -282,7 +283,34 @@ class MainHook : XposedModule() {
         }
     }
 
+    private fun hookIntents(classLoader: ClassLoader) {
+        try {
+            val contextClass = classLoader.loadClass("android.content.Context")
+            val startActivityMethod = contextClass.getDeclaredMethod("startActivity", Intent::class.java)
+            
+            hook(startActivityMethod).intercept { chain ->
+                val intent = chain.args[0] as? Intent
+                if (intent != null && isAdIntent(intent)) {
+                    Log.d("XBlock", "Intent blocking: Redirect to ad prevented")
+                    null // Prevent starting the activity
+                } else {
+                    chain.proceed()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("XBlock", "Intent Hook Error: ${e.message}")
+        }
+    }
+
     private fun isAdDomain(host: String): Boolean {
         return dynamicDomains.any { host.contains(it, ignoreCase = true) }
+    }
+
+    private fun isAdIntent(intent: Intent): Boolean {
+        val data = intent.dataString?.lowercase() ?: ""
+        return data.contains("googleads") || 
+               data.contains("doubleclick") ||
+               data.contains("play.google.com/store/apps/details?id=") ||
+               data.contains("market://details?id=")
     }
 }

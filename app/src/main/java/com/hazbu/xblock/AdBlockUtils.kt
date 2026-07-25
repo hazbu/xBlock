@@ -28,14 +28,18 @@ object AdBlockUtils {
     }
 
     fun isAdView(className: String): Boolean {
-        return className.contains("com.google.android.gms.ads", ignoreCase = true) ||
-               className.contains("com.applovin", ignoreCase = true) ||
-               className.contains("com.mbridge.msdk", ignoreCase = true) || // Mintegral
-               className.contains("com.facebook.ads", ignoreCase = true) ||
-               className.contains("com.unity3d.ads", ignoreCase = true) ||
-               className.contains("com.unity3d.services", ignoreCase = true) ||
-               className.contains("com.vungle.ads", ignoreCase = true) ||
-               className.contains("com.ironsource", ignoreCase = true)
+        val lowerName = className.lowercase()
+        return lowerName.contains("com.google.android.gms.ads") ||
+               lowerName.contains("com.google.unity.ads") ||
+               lowerName.contains("com.applovin") ||
+               lowerName.contains("com.mbridge.msdk") ||
+               lowerName.contains("com.facebook.ads") ||
+               lowerName.contains("com.unity3d.ads") ||
+               lowerName.contains("com.unity3d.services") ||
+               lowerName.contains("com.vungle.ads") ||
+               lowerName.contains("com.ironsource") ||
+               lowerName.contains("com.adcolony") ||
+               lowerName.contains("com.chartboost")
     }
 
     fun fixPermissions(context: Context) {
