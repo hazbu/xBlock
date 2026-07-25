@@ -25,16 +25,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        run: ./gradlew :app:assembleRelease
+      - name: Build APK
+        run: ./gradlew :app:assembleDebug
 
       - name: Rename APK for Release
-        run: mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/XBlock-${{ github.ref_name }}.apk
+        run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/XBlock-${{ github.ref_name }}.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/XBlock-${{ github.ref_name }}.apk
+          files: app/build/outputs/apk/debug/XBlock-${{ github.ref_name }}.apk
           body: |
             ## Automated Release ${{ github.ref_name }}
             
