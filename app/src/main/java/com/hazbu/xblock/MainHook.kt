@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -18,8 +19,10 @@ import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
 import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.io.ByteArrayInputStream
-import java.net.InetAddress
 import java.lang.reflect.Method
+import java.lang.reflect.Proxy
+import java.net.InetAddress
+import java.util.concurrent.Executor
 
 class MainHook : XposedModule() {
 
@@ -33,12 +36,16 @@ class MainHook : XposedModule() {
 
         Log.d("XBlock", "Hooking ${param.packageName} via libxposed")
 
-        hookApplication(param.classLoader)
-        hookDns(param.classLoader)
-        hookUi(param.classLoader)
-        hookWebView(param.classLoader)
-        hookGameAds(param.classLoader)
-        hookIntents(param.classLoader)
+        val classLoader = param.classLoader
+        hookApplication(classLoader)
+        hookDns(classLoader)
+        hookDeepDns(classLoader)
+        hookOkHttp(classLoader)
+        hookCronet(classLoader)
+        hookUi(classLoader)
+        hookWebView(classLoader)
+        hookGameAds(classLoader)
+        hookIntents(classLoader)
     }
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
@@ -129,6 +136,7 @@ class MainHook : XposedModule() {
             hook(getByNameMethod).intercept { chain ->
                 val host = chain.args[0] as? String
                 if (host != null && isAdDomain(host)) {
+                    Log.d("XBlock", "DNS blocking: $host")
                     sinkholeAddress
                 } else {
                     chain.proceed()
@@ -138,6 +146,7 @@ class MainHook : XposedModule() {
             hook(getAllByNameMethod).intercept { chain ->
                 val host = chain.args[0] as? String
                 if (host != null && isAdDomain(host)) {
+                    Log.d("XBlock", "DNS (all) blocking: $host")
                     arrayOf(sinkholeAddress)
                 } else {
                     chain.proceed()
@@ -146,6 +155,66 @@ class MainHook : XposedModule() {
         } catch (e: Exception) {
             Log.e("XBlock", "DNS Hook Error: ${e.message}")
         }
+    }
+
+    private fun hookDeepDns(classLoader: ClassLoader) {
+        try {
+            val dnsResolverClass = classLoader.loadClass("android.net.DnsResolver")
+            val callbackClass = classLoader.loadClass("android.net.DnsResolver\$Callback")
+            val dnsExceptionClass = classLoader.loadClass("android.net.DnsResolver\$DnsException")
+            val dnsExceptionConstructor = dnsExceptionClass.getDeclaredConstructor(Int::class.java, Throwable::class.java)
+
+            val queryMethods = dnsResolverClass.declaredMethods.filter { it.name == "query" || it.name == "rawQuery" }
+
+            for (method in queryMethods) {
+                hook(method).intercept { chain ->
+                    val domain = chain.args.find { it is String } as? String
+                    if (domain != null && isAdDomain(domain)) {
+                        Log.d("XBlock", "Deep DNS blocking: $domain")
+                        val callback = chain.args.find { callbackClass.isInstance(it) }
+                        if (callback != null) {
+                            val error = dnsExceptionConstructor.newInstance(1, null) // ERROR_NAME_NOT_FOUND = 1
+                            val onErrorMethod = callbackClass.getDeclaredMethod("onError", dnsExceptionClass)
+                            onErrorMethod.invoke(callback, error)
+                        }
+                        null
+                    } else {
+                        chain.proceed()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("XBlock", "Deep DNS Hook Error: ${e.message}")
+        }
+    }
+
+    private fun hookOkHttp(classLoader: ClassLoader) {
+        try {
+            val builderClass = classLoader.loadClass("okhttp3.OkHttpClient\$Builder")
+            val dnsInterface = classLoader.loadClass("okhttp3.Dns")
+            val dnsMethod = builderClass.getDeclaredMethod("dns", dnsInterface)
+            val systemDns = dnsInterface.getDeclaredField("SYSTEM").get(null)
+
+            hook(dnsMethod).intercept { chain ->
+                Log.d("XBlock", "OkHttp DNS: Forcing system DNS")
+                chain.args[0] = systemDns
+                chain.proceed()
+            }
+        } catch (ignored: Exception) {}
+    }
+
+    private fun hookCronet(classLoader: ClassLoader) {
+        try {
+            val builderClass = classLoader.loadClass("org.chromium.net.CronetEngine\$Builder")
+            val method = builderClass.declaredMethods.find { it.name == "setUseBuiltInDnsResolver" }
+            if (method != null) {
+                hook(method).intercept { chain ->
+                    Log.d("XBlock", "Cronet DNS: Disabling built-in resolver")
+                    chain.args[0] = false
+                    chain.proceed()
+                }
+            }
+        } catch (ignored: Exception) {}
     }
 
     private fun hookUi(classLoader: ClassLoader) {
@@ -215,7 +284,6 @@ class MainHook : XposedModule() {
 
     private fun hookGameAds(classLoader: ClassLoader) {
         try {
-            // 1. Unity Ads Initialization
             try {
                 val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
                 unityAdsClass.methods.find { it.name == "initialize" }?.let { method ->
@@ -230,7 +298,6 @@ class MainHook : XposedModule() {
                 }
             } catch (ignored: Exception) {}
 
-            // 2. Unity Ads Show
             try {
                 val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
                 unityAdsClass.methods.find { it.name == "show" }?.let { method ->
@@ -241,7 +308,6 @@ class MainHook : XposedModule() {
                 }
             } catch (ignored: Exception) {}
 
-            // 3. AdUnitActivity (Unity)
             try {
                 val adUnitClass = classLoader.loadClass("com.unity3d.services.ads.adunit.AdUnitActivity")
                 adUnitClass.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
@@ -254,7 +320,6 @@ class MainHook : XposedModule() {
                 }
             } catch (ignored: Exception) {}
 
-            // 4. AdActivity (AdMob/Google Ads)
             try {
                 val adActivityClass = classLoader.loadClass("com.google.android.gms.ads.AdActivity")
                 adActivityClass.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
@@ -267,7 +332,6 @@ class MainHook : XposedModule() {
                 }
             } catch (ignored: Exception) {}
 
-            // 5. Unity Google Ads Bridge
             try {
                 val bridgeClass = classLoader.loadClass("com.google.unity.ads.UnityRewardedAd")
                 bridgeClass.methods.find { it.name == "show" }?.let { method ->
@@ -291,8 +355,8 @@ class MainHook : XposedModule() {
             hook(startActivityMethod).intercept { chain ->
                 val intent = chain.args[0] as? Intent
                 if (intent != null && isAdIntent(intent)) {
-                    Log.d("XBlock", "Intent blocking: Redirect to ad prevented")
-                    null // Prevent starting the activity
+                    Log.d("XBlock", "Intent blocking: Redirect prevented")
+                    null 
                 } else {
                     chain.proceed()
                 }
@@ -307,10 +371,14 @@ class MainHook : XposedModule() {
     }
 
     private fun isAdIntent(intent: Intent): Boolean {
-        val data = intent.dataString?.lowercase() ?: ""
+        val data = try { intent.dataString?.lowercase() ?: "" } catch (ignored: Exception) { "" }
+        
         return data.contains("googleads") || 
                data.contains("doubleclick") ||
+               data.contains("adservice") ||
+               data.contains("pagead") ||
                data.contains("play.google.com/store/apps/details?id=") ||
-               data.contains("market://details?id=")
+               data.contains("market://details?id=") ||
+               data.contains("ads")
     }
 }
