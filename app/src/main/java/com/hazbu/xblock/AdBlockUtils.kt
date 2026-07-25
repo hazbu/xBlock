@@ -37,9 +37,15 @@ object AdBlockUtils {
                lowerName.contains("com.unity3d.ads") ||
                lowerName.contains("com.unity3d.services") ||
                lowerName.contains("com.vungle.ads") ||
+               lowerName.contains("com.vungle.warren") ||
                lowerName.contains("com.ironsource") ||
                lowerName.contains("com.adcolony") ||
-               lowerName.contains("com.chartboost")
+               lowerName.contains("com.chartboost") ||
+               lowerName.contains("com.fyber") ||
+               lowerName.contains("com.inmobi") ||
+               lowerName.contains("com.smaato") ||
+               lowerName.contains("com.tradplus") ||
+               lowerName.contains("com.miniclip.ads")
     }
 
     fun fixPermissions(context: Context) {
