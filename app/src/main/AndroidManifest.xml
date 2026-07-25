@@ -36,6 +36,12 @@
             android:name="xposedsharedprefs"
             android:value="true" />
 
+        <provider
+            android:name=".AdBlockProvider"
+            android:authorities="com.hazbu.xblock.provider"
+            android:exported="true"
+            android:enabled="true" />
+
     </application>
 
 </manifest>

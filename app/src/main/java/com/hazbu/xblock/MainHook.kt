@@ -39,21 +39,16 @@ class MainHook : XposedModule() {
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
         Log.d("XBlock", "Hot reloading: Saving state...")
-        
         val state = Bundle().apply {
             putStringArrayList("domains", ArrayList(dynamicDomains))
         }
         param.setSavedInstanceState(state)
-        
         return true
     }
 
     override fun onHotReloaded(param: HotReloadedParam) {
-        // Sangat Penting: Panggil super untuk membersihkan hook lama agar tidak tumpang tindih
         super.onHotReloaded(param)
-        
         Log.d("XBlock", "Hot reloading: Restoring state...")
-        
         val savedInstanceState = param.savedInstanceState
         if (savedInstanceState is Bundle) {
             val savedDomains = savedInstanceState.getStringArrayList("domains")
@@ -74,25 +69,48 @@ class MainHook : XposedModule() {
                 val result = chain.proceed()
                 val context = chain.thisObject as Context
                 
-                try {
-                    val remotePrefs = getRemotePreferences(AdBlockUtils.PREFS_NAME)
-                    val domains = remotePrefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
-                    dynamicDomains.clear()
-                    dynamicDomains.addAll(domains)
-                    Log.d("XBlock", "Loaded ${dynamicDomains.size} domains from remote prefs")
-                } catch (e: Exception) {
-                    Log.e("XBlock", "Failed to load remote prefs: ${e.message}")
-                }
+                // Fetch domains from ContentProvider in background
+                Thread {
+                    fetchDomainsFromProvider(context)
+                }.start()
 
-                if (dynamicDomains.isEmpty()) {
-                    showToast(context, "XBlock: Please open app to update filters")
-                } else {
-                    showToast(context, "XBlock Active")
-                }
                 result
             }
         } catch (e: Exception) {
             Log.e("XBlock", "Application Hook Error: ${e.message}")
+        }
+    }
+
+    private fun fetchDomainsFromProvider(context: Context) {
+        try {
+            Log.d("XBlock", "Fetching domains from provider...")
+            val uri = Uri.parse("content://com.hazbu.xblock.provider/domains")
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            
+            if (cursor != null) {
+                val tempSet = mutableSetOf<String>()
+                while (cursor.moveToNext()) {
+                    val domain = cursor.getString(0)
+                    tempSet.add(domain)
+                }
+                cursor.close()
+                
+                dynamicDomains.clear()
+                dynamicDomains.addAll(tempSet)
+                Log.d("XBlock", "Successfully fetched ${dynamicDomains.size} domains from provider")
+
+                if (dynamicDomains.isNotEmpty()) {
+                    showToast(context, "XBlock Active")
+                } else {
+                    showToast(context, "XBlock: Please open app to update filters")
+                }
+            } else {
+                Log.e("XBlock", "Cursor is null, provider might be inaccessible")
+                showToast(context, "XBlock: Provider error, check settings")
+            }
+        } catch (e: Exception) {
+            Log.e("XBlock", "Failed to fetch domains: ${e.message}")
+            showToast(context, "XBlock: IPC Error")
         }
     }
 
@@ -140,7 +158,6 @@ class MainHook : XposedModule() {
             hook(addViewMethod).intercept { chain ->
                 val view = chain.args[0] as? View
                 if (view != null && AdBlockUtils.isAdView(view.javaClass.name)) {
-                    // Proteksi: Hanya sembunyikan jika bukan bagian vital dari sistem yang sedang error
                     view.visibility = View.GONE
                     val lp = chain.args[1] as? ViewGroup.LayoutParams
                     if (lp != null) {
