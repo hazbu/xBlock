@@ -35,6 +35,7 @@ class MainHook : XposedModule() {
         hookDns(param.classLoader)
         hookUi(param.classLoader)
         hookWebView(param.classLoader)
+        hookGameAds(param.classLoader)
     }
 
     override fun onHotReloading(param: HotReloadingParam): Boolean {
@@ -214,6 +215,70 @@ class MainHook : XposedModule() {
 
         } catch (e: Exception) {
             Log.e("XBlock", "WebView Hook Error: ${e.message}")
+        }
+    }
+
+    private fun hookGameAds(classLoader: ClassLoader) {
+        try {
+            // 1. Unity Ads Initialization - Force Test Mode
+            try {
+                val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
+                val initMethod = unityAdsClass.methods.find { it.name == "initialize" }
+                if (initMethod != null) {
+                    hook(initMethod).intercept { chain ->
+                        Log.d("XBlock", "UnityAds: Forcing Test Mode")
+                        // Many signatures exist, we find the boolean parameter for testMode
+                        val args = chain.args.toMutableList()
+                        for (i in args.indices) {
+                            if (args[i] is Boolean) {
+                                args[i] = true // Set testMode = true
+                            }
+                        }
+                        // Reassign args and proceed
+                        // Note: In libxposed, we might need to call invoker or just modify chain
+                        chain.proceed() 
+                    }
+                }
+            } catch (ignored: ClassNotFoundException) {}
+
+            // 2. Unity Ads Show - Prevent displaying
+            try {
+                val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
+                val showMethod = unityAdsClass.methods.find { it.name == "show" }
+                if (showMethod != null) {
+                    hook(showMethod).intercept {
+                        Log.d("XBlock", "UnityAds: Blocked show() call")
+                        null // Prevent showing
+                    }
+                }
+            } catch (ignored: ClassNotFoundException) {}
+
+            // 3. AdUnitActivity - Auto-close full-screen activities
+            try {
+                val adUnitClass = classLoader.loadClass("com.unity3d.services.ads.adunit.AdUnitActivity")
+                val onCreateMethod = adUnitClass.getDeclaredMethod("onCreate", Bundle::class.java)
+                hook(onCreateMethod).intercept { chain ->
+                    val activity = chain.thisObject as android.app.Activity
+                    Log.d("XBlock", "UnityAds: Closing AdUnitActivity instantly")
+                    activity.finish()
+                    chain.proceed()
+                }
+            } catch (ignored: Exception) {}
+
+            // 4. AppLovin - Block initialization or show
+            try {
+                val alClass = classLoader.loadClass("com.applovin.sdk.AppLovinSdk")
+                val initMethod = alClass.methods.find { it.name == "initializeSdk" }
+                if (initMethod != null) {
+                    hook(initMethod).intercept {
+                        Log.d("XBlock", "AppLovin: Blocked initialization")
+                        null
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+        } catch (e: Exception) {
+            Log.e("XBlock", "GameAds Hook Error: ${e.message}")
         }
     }
 

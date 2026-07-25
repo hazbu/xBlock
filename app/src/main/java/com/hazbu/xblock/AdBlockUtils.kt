@@ -30,8 +30,12 @@ object AdBlockUtils {
     fun isAdView(className: String): Boolean {
         return className.contains("com.google.android.gms.ads", ignoreCase = true) ||
                className.contains("com.applovin", ignoreCase = true) ||
-               className.contains("com.mbridge.msdk", ignoreCase = true) ||
-               className.contains("com.facebook.ads", ignoreCase = true)
+               className.contains("com.mbridge.msdk", ignoreCase = true) || // Mintegral
+               className.contains("com.facebook.ads", ignoreCase = true) ||
+               className.contains("com.unity3d.ads", ignoreCase = true) ||
+               className.contains("com.unity3d.services", ignoreCase = true) ||
+               className.contains("com.vungle.ads", ignoreCase = true) ||
+               className.contains("com.ironsource", ignoreCase = true)
     }
 
     fun fixPermissions(context: Context) {
