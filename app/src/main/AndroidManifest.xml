@@ -31,7 +31,7 @@
             android:value="XBlock - Ad Blocker Module" />
         <meta-data
             android:name="xposedminversion"
-            android:value="93" />
+            android:value="102" />
         <meta-data
             android:name="xposedsharedprefs"
             android:value="true" />
