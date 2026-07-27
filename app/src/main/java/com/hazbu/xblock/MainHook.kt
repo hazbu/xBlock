@@ -52,19 +52,41 @@ class MainHook : XposedModule() {
         "com.tradplus",
         "com.bytedance.sdk.openadsdk",
         "com.anythink",
-        "com.pangle.global"
+        "com.pangle.global",
+        "com.moloco.sdk",
+        "com.mintegral.msdk",
+        "com.google.android.gms.ads.admanager"
+    )
+
+    private val systemSkipList = listOf(
+        "android",
+        "com.android.vending",
+        "com.google.android.gms",
+        "com.google.android.gsf",
+        "com.android.providers.downloads",
+        "com.google.android.apps.docs",
+        "com.google.android.webview",
+        "com.google.android.syncadapters.contacts",
+        "com.google.android.finsky",
+        "com.google.android.play.games"
     )
 
     private val voidKillMethods = listOf(
-        "loadAd", "loadAds", "load", "show", "fetchAd", "initSDK", "initialize", "initializeSdk", "init", "start"
+        "loadAd", "loadAds", "load", "show", "fetchAd", "initSDK", "initialize", "initializeSdk", "init", "start", "showAd", "loadInterstitial", "loadRewardedAd", "startAutoRefresh"
     )
 
     override fun onPackageReady(param: PackageReadyParam) {
         super.onPackageReady(param)
         
         if (param.packageName == modulePackage) return
+        
+        // Safety: Never hook critical system processes
+        if (systemSkipList.contains(param.packageName)) {
+            Log.d("XBlock", "Skipping critical system package: ${param.packageName}")
+            return
+        }
 
-        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V5.1 (Passthrough)")
+        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V6.7 (Absolute Zero)")
 
         val classLoader = param.classLoader
         hookApplication(classLoader)
@@ -81,6 +103,10 @@ class MainHook : XposedModule() {
         hookStealth(classLoader)
         hookStealthVPN(classLoader)
         hookAdMobIdentity(classLoader)
+        hookNuclear(classLoader)
+        hookEconomic(classLoader)
+        hookFlickerPro(classLoader)
+        hookAutoReward(classLoader)
     }
 
     private fun hookApplication(classLoader: ClassLoader) {
@@ -121,9 +147,7 @@ class MainHook : XposedModule() {
                 Log.d("XBlock", "Successfully fetched ${dynamicDomains.size} domains")
 
                 if (dynamicDomains.isNotEmpty()) {
-                    showToast(context, "XBlock Active")
-                } else {
-                    showToast(context, "XBlock: Please open app to update filters")
+                    showToast(context, "XBlock Absolute Zero Active")
                 }
             }
         } catch (e: Exception) {
@@ -208,10 +232,10 @@ class MainHook : XposedModule() {
             hook(connectMethod).intercept { chain ->
                 val address = chain.args[0] as? InetSocketAddress
                 if (address != null) {
-                    val host = address.hostString // Avoid reverse DNS lookup
+                    val host = address.hostString 
                     if (isAdDomain(host)) {
-                        Log.d("XBlock", "Socket blocking: $host")
-                        throw IOException("Connection blocked by XBlock")
+                        Log.d("XBlock", "Socket blocking (Silent): $host")
+                        return@intercept null 
                     }
                 }
                 chain.proceed()
@@ -263,6 +287,31 @@ class MainHook : XposedModule() {
                 }
                 chain.proceed()
             }
+
+            // Ghost Mode: Prevent native ad views from even starting with dimensions
+            val ghostClasses = listOf(
+                "com.google.android.gms.ads.nativead.NativeAdView",
+                "com.applovin.mediation.ads.MaxAdView",
+                "com.applovin.adview.AppLovinAdView",
+                "com.google.android.gms.ads.admanager.AdManagerAdView"
+            )
+            for (clsName in ghostClasses) {
+                try {
+                    val cls = classLoader.loadClass(clsName)
+                    cls.getDeclaredConstructors().forEach { constructor ->
+                        hook(constructor).intercept { chain ->
+                            val view = chain.thisObject as View
+                            view.visibility = View.GONE
+                            view.alpha = 0f
+                            view.scaleX = 0f
+                            view.scaleY = 0f
+                            Log.d("XBlock", "Ghost Mode: Constructor-level kill for $clsName")
+                            chain.proceed()
+                        }
+                    }
+                } catch (ignored: Exception) {}
+            }
+
         } catch (e: Exception) {
             Log.e("XBlock", "UI Hook Error: ${e.message}")
         }
@@ -270,6 +319,10 @@ class MainHook : XposedModule() {
 
     private fun recursiveHide(view: View) {
         view.visibility = View.GONE
+        view.alpha = 0f
+        view.scaleX = 0f
+        view.scaleY = 0f
+        view.translationX = 9999f // Move it way off-screen
         view.layoutParams?.let {
             it.width = 0
             it.height = 0
@@ -286,8 +339,9 @@ class MainHook : XposedModule() {
             }
             
             if (visibleChildren == 0) {
-                Log.d("XBlock", "Recursive UI: Hiding parent ${current.javaClass.name}")
+                Log.d("XBlock", "Ghost Mode: Collapsing parent ${current.javaClass.name}")
                 current.visibility = View.GONE
+                current.layoutParams?.let { it.width = 0; it.height = 0 }
                 current = current.parent as? ViewGroup
             } else {
                 break
@@ -340,10 +394,9 @@ class MainHook : XposedModule() {
 
     private fun hookGameAds(classLoader: ClassLoader) {
         try {
-            // 1. Aggressive Void Killing for ad SDKs
             for (pkg in adPackages) {
                 try {
-                    val classes = listOf("Ads", "AdMob", "UnityAds", "AppLovin", "Vungle", "IronSource", "ATSDK", "TTAdSdk", "PAGSdk")
+                    val classes = listOf("Ads", "AdMob", "UnityAds", "AppLovin", "Vungle", "IronSource", "ATSDK", "TTAdSdk", "PAGSdk", "Moloco", "MIntegralSDK")
                     for (clsName in classes) {
                         try {
                             val cls = classLoader.loadClass("$pkg.$clsName")
@@ -360,51 +413,41 @@ class MainHook : XposedModule() {
                 } catch (ignored: Exception) {}
             }
 
-            // 2. AppLovin MAX Sabotage
+            // Stable AdMob load block
             try {
-                val maxAdViewClass = classLoader.loadClass("com.applovin.mediation.ads.MaxAdView")
-                maxAdViewClass.methods.find { it.name == "loadAd" }?.let { method ->
+                val interstitialAdClass = classLoader.loadClass("com.google.android.gms.ads.interstitial.InterstitialAd")
+                interstitialAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
                     hook(method).intercept {
-                        Log.d("XBlock", "AppLovin MAX: Blocked loadAd()")
+                        Log.d("XBlock", "AdMob: Blocked Interstitial load()")
+                        null 
+                    }
+                }
+
+                val rewardedAdClass = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
+                rewardedAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
+                    hook(method).intercept {
+                        Log.d("XBlock", "AdMob: Blocked Rewarded load()")
                         null
                     }
                 }
-                
-                val nativeLoaderClass = classLoader.loadClass("com.applovin.mediation.nativeAds.MaxNativeAdLoader")
-                nativeLoaderClass.methods.find { it.name == "loadAd" }?.let { method ->
+
+                val adManagerInterClass = classLoader.loadClass("com.google.android.gms.ads.admanager.AdManagerInterstitialAd")
+                adManagerInterClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
                     hook(method).intercept {
-                        Log.d("XBlock", "AppLovin MAX: Blocked Native loadAd()")
+                        Log.d("XBlock", "AdManager: Blocked Interstitial load()")
                         null
                     }
                 }
-                
-                // Deep AppLovin hook
-                try {
-                    val implClass = classLoader.loadClass("com.applovin.impl.mediation.ads.MaxAdViewImpl")
-                    implClass.methods.find { it.name == "loadAd" }?.let { method ->
-                        hook(method).intercept {
-                            Log.d("XBlock", "AppLovin MAX Impl: Blocked loadAd()")
-                            null
-                        }
-                    }
-                } catch (ignored: Exception) {}
             } catch (ignored: Exception) {}
 
-            // 3. Unity Ads & Token destruction
             try {
-                val tokenStorageClass = classLoader.loadClass("com.unity3d.services.ads.token.TokenStorage")
-                tokenStorageClass.getDeclaredMethod("getToken").let { method ->
-                    hook(method).intercept {
-                        Log.d("XBlock", "UnityAds: Token generation prevented")
-                        null
-                    }
-                }
-                
-                val deviceReaderClass = classLoader.loadClass("com.unity3d.services.core.device.reader.DeviceInfoReader")
-                deviceReaderClass.getDeclaredMethod("getDeviceInfo").let { method ->
-                    hook(method).intercept {
-                        Log.d("XBlock", "UnityAds: Device info gathering prevented")
-                        emptyMap<String, Any>()
+                val bridgeClass = classLoader.loadClass("com.applovin.mediation.unity.MaxUnityAdManager")
+                bridgeClass.declaredMethods.forEach { method ->
+                    if (method.name.startsWith("load") || method.name.startsWith("show")) {
+                        hook(method).intercept {
+                            Log.d("XBlock", "AppLovin Bridge Blocked: ${method.name}()")
+                            null
+                        }
                     }
                 }
             } catch (ignored: Exception) {}
@@ -416,8 +459,8 @@ class MainHook : XposedModule() {
 
     private fun hookIntents(classLoader: ClassLoader) {
         try {
-            val contextClass = classLoader.loadClass("android.content.Context")
-            val startActivityMethod = contextClass.getDeclaredMethod("startActivity", Intent::class.java)
+            val contextImplClass = classLoader.loadClass("android.app.ContextImpl")
+            val startActivityMethod = contextImplClass.getDeclaredMethod("startActivity", Intent::class.java)
             
             hook(startActivityMethod).intercept { chain ->
                 val intent = chain.args[0] as? Intent
@@ -429,6 +472,7 @@ class MainHook : XposedModule() {
                 }
             }
             
+            // Secondary layer via Instrumentation
             try {
                 val instrClass = classLoader.loadClass("android.app.Instrumentation")
                 val execStartMethod = instrClass.declaredMethods.find { it.name == "execStartActivity" }
@@ -459,7 +503,6 @@ class MainHook : XposedModule() {
             hook(registerMethod).intercept { chain ->
                 val sensor = chain.args[1] as? Sensor
                 if (sensor != null && (sensor.type == Sensor.TYPE_ACCELEROMETER || sensor.type == Sensor.TYPE_GYROSCOPE)) {
-                    Log.d("XBlock", "Sensors: Blocking registerListener for movement ads")
                     return@intercept false 
                 }
                 chain.proceed()
@@ -479,7 +522,6 @@ class MainHook : XposedModule() {
                 if (field != null) {
                     val name = field.name
                     if (name == "disableHooks" || name == "sHookedMethodCallbacks") {
-                        Log.d("XBlock", "Stealth: Hiding Xposed field $name")
                         throw NoSuchFieldException(name)
                     }
                 }
@@ -496,7 +538,6 @@ class MainHook : XposedModule() {
             hook(hasCapabilityMethod).intercept { chain ->
                 val transport = chain.args[0] as? Int
                 if (transport == NetworkCapabilities.TRANSPORT_VPN) {
-                    Log.d("XBlock", "Stealth: Hiding VPN status")
                     return@intercept false
                 }
                 chain.proceed()
@@ -506,15 +547,6 @@ class MainHook : XposedModule() {
 
     private fun hookAdMobIdentity(classLoader: ClassLoader) {
         try {
-            try {
-                val adIdInfoClass = classLoader.loadClass("com.google.android.gms.ads.identifier.AdvertisingIdClient\$Info")
-                val getIdMethod = adIdInfoClass.getDeclaredMethod("getId")
-                hook(getIdMethod).intercept {
-                    Log.d("XBlock", "Stealth: Spoofing GAID to Zeros")
-                    "00000000-0000-0000-0000-000000000000"
-                }
-            } catch (ignored: Exception) {}
-
             val bundleClass = classLoader.loadClass("android.os.BaseBundle")
             val getMethod = bundleClass.getDeclaredMethod("get", String::class.java)
             
@@ -523,7 +555,6 @@ class MainHook : XposedModule() {
                 if (key == "com.google.android.gms.ads.APPLICATION_ID" || 
                     key == "bu_app_id" || 
                     key == "anythink_app_id") {
-                    Log.d("XBlock", "Stealth: Spoofing App Identity for $key")
                     return@intercept "ca-app-pub-0000000000000000~0000000000"
                 }
                 chain.proceed()
@@ -531,24 +562,198 @@ class MainHook : XposedModule() {
         } catch (ignored: Exception) {}
     }
 
+    private fun hookNuclear(classLoader: ClassLoader) {
+        val activities = listOf(
+            "com.google.android.gms.ads.AdActivity",
+            "com.applovin.adview.AppLovinFullscreenActivity",
+            "com.applovin.sdk.AppLovinWebViewActivity"
+        )
+        for (actName in activities) {
+            try {
+                val cls = classLoader.loadClass(actName)
+                cls.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
+                    hook(method).intercept { chain ->
+                        val activity = chain.thisObject as Activity
+                        Log.d("XBlock", "Nuclear: Killing ad activity ${activity.javaClass.name}")
+                        activity.finish()
+                        null
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        // Deep AdMob Overlay kill
+        try {
+            val parcelClass = classLoader.loadClass("com.google.android.gms.ads.internal.overlay.AdOverlayInfoParcel")
+            parcelClass.getDeclaredConstructors().forEach { constructor ->
+                hook(constructor).intercept { chain ->
+                    Log.d("XBlock", "Nuclear: Nullifying AdOverlayInfoParcel")
+                    chain.proceed()
+                }
+            }
+        } catch (ignored: Exception) {}
+    }
+
+    private fun hookEconomic(classLoader: ClassLoader) {
+        try {
+            // Disable Revenue reporting
+            val listeners = listOf(
+                "com.google.android.gms.ads.interstitial.InterstitialAd" to "setOnPaidEventListener",
+                "com.google.android.gms.ads.rewarded.RewardedAd" to "setOnPaidEventListener",
+                "com.applovin.mediation.ads.MaxAdView" to "setRevenueListener",
+                "com.applovin.mediation.ads.MaxInterstitialAd" to "setRevenueListener",
+                "com.applovin.mediation.ads.MaxRewardedAd" to "setRevenueListener"
+            )
+
+            for ((clsName, methodName) in listeners) {
+                try {
+                    val cls = classLoader.loadClass(clsName)
+                    cls.declaredMethods.find { it.name == methodName }?.let { method ->
+                        hook(method).intercept { chain ->
+                            Log.d("XBlock", "Economic: Blocked listener registration for $clsName")
+                            chain.args[0] = null
+                            chain.proceed()
+                        }
+                    }
+                } catch (ignored: Exception) {}
+            }
+
+            // Zero out reported values
+            try {
+                val adValueClass = classLoader.loadClass("com.google.android.gms.ads.AdValue")
+                adValueClass.getDeclaredMethod("getValueMicros").let { method ->
+                    hook(method).intercept { 0L }
+                }
+            } catch (ignored: Exception) {}
+
+        } catch (ignored: Exception) {}
+    }
+
+    private fun hookFlickerPro(classLoader: ClassLoader) {
+        try {
+            val adViewClasses = listOf(
+                "com.google.android.gms.ads.BaseAdView",
+                "com.google.android.gms.ads.nativead.NativeAdView",
+                "com.applovin.mediation.ads.MaxAdView",
+                "com.applovin.adview.AppLovinAdView",
+                "com.google.android.gms.ads.admanager.AdManagerAdView"
+            )
+            for (clsName in adViewClasses) {
+                try {
+                    val cls = classLoader.loadClass(clsName)
+                    
+                    // Force visibility to stay GONE
+                    cls.getDeclaredMethod("setVisibility", Int::class.javaPrimitiveType).let { method ->
+                        hook(method).intercept { chain ->
+                            chain.args[0] = View.GONE
+                            chain.proceed()
+                        }
+                    }
+
+                    // Absolute Zero: Force size, alpha, and scale to 0
+                    cls.getDeclaredMethod("onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).let { method ->
+                        hook(method).intercept { chain ->
+                            val view = chain.thisObject as View
+                            view.alpha = 0f
+                            view.scaleX = 0f
+                            view.scaleY = 0f
+                            val setMeasuredDimension = View::class.java.getDeclaredMethod("setMeasuredDimension", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                            setMeasuredDimension.isAccessible = true
+                            setMeasuredDimension.invoke(chain.thisObject, 0, 0)
+                            null
+                        }
+                    }
+                } catch (ignored: Exception) {}
+            }
+        } catch (ignored: Exception) {}
+    }
+
+    private fun hookAutoReward(classLoader: ClassLoader) {
+        try {
+            // AdMob Rewarded Insta-Grant
+            val adMobRewarded = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
+            adMobRewarded.declaredMethods.find { it.name == "show" }?.let { method ->
+                hook(method).intercept { chain ->
+                    Log.d("XBlock", "Auto-Reward: Triggering AdMob Reward")
+                    val listener = chain.args.find { it.javaClass.name.contains("OnUserEarnedRewardListener") }
+                    if (listener != null) {
+                        try {
+                            val onUserEarnedReward = listener.javaClass.methods.find { it.name == "onUserEarnedReward" }
+                            onUserEarnedReward?.invoke(listener, null)
+                        } catch (e: Exception) {
+                            Log.e("XBlock", "Failed to trigger AdMob reward: ${e.message}")
+                        }
+                    }
+                    null 
+                }
+            }
+
+            // AppLovin MAX Rewarded Insta-Grant
+            val maxRewarded = classLoader.loadClass("com.applovin.mediation.ads.MaxRewardedAd")
+            maxRewarded.declaredMethods.find { it.name == "showAd" }?.let { method ->
+                hook(method).intercept { chain ->
+                    Log.d("XBlock", "Auto-Reward: Triggering AppLovin Reward")
+                    try {
+                        val listenerField = chain.thisObject.javaClass.getDeclaredFields().find { it.type.name.contains("MaxAdRewardedListener") || it.name == "listener" }
+                        listenerField?.isAccessible = true
+                        val listener = listenerField?.get(chain.thisObject)
+                        if (listener != null) {
+                            val onAdRewarded = listener.javaClass.methods.find { it.name == "onAdRewarded" }
+                            onAdRewarded?.invoke(listener, null, null)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("XBlock", "Failed to trigger AppLovin reward: ${e.message}")
+                    }
+                    null
+                }
+            }
+        } catch (ignored: Exception) {}
+    }
+
     private fun isAdDomain(host: String): Boolean {
-        return dynamicDomains.any { host.contains(it, ignoreCase = true) }
+        val hostLower = host.lowercase()
+        
+        // Whitelist attribution & essential content domains
+        if (hostLower.contains("googleusercontent.com") || 
+            hostLower.contains("play.google.com") || 
+            hostLower.contains("play.googleapis.com") ||
+            hostLower.contains("dl.google.com") ||
+            hostLower.contains("googleapis.com") ||
+            hostLower.contains("gstatic.com") ||
+            hostLower.contains("android.com") ||
+            hostLower.contains("adjust.com") ||
+            hostLower.contains("appsflyer.com")) {
+            return false
+        }
+        
+        return dynamicDomains.any { host.contains(it, ignoreCase = true) } ||
+               host.contains("rayjump.com", ignoreCase = true) ||
+               host.contains("mintegral.net", ignoreCase = true) ||
+               host.contains("maxesads.com", ignoreCase = true) ||
+               host.contains("sonicsads.com", ignoreCase = true) ||
+               host.contains("news-cdn.site", ignoreCase = true)
     }
 
     private fun isAdIntent(intent: Intent): Boolean {
         val data = try { intent.dataString?.lowercase() ?: "" } catch (ignored: Exception) { "" }
         val component = intent.component?.className?.lowercase() ?: ""
         
+        // Safety: Never block play store intents required for ownership check
+        if (data.contains("play.google.com/store/apps/details?id=") && 
+            intent.component?.packageName == "com.android.vending") {
+            return false
+        }
+
         return data.contains("googleads") || 
                data.contains("doubleclick") ||
                data.contains("adservice") ||
                data.contains("pagead") ||
                data.contains("googleadservices") ||
-               data.contains("play.google.com/store/apps/details?id=") ||
-               data.contains("market://details?id=") ||
                data.contains("ads") ||
                component.contains("adactivity") ||
                component.contains("adunitactivity") ||
-               component.contains("applovin")
+               component.contains("applovin") ||
+               component.contains("vungle") ||
+               component.contains("ironsource")
     }
 }
