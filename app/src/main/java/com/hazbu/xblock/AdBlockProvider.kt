@@ -16,7 +16,7 @@ class AdBlockProvider : ContentProvider() {
         projection: Array<out String>?,
         selection: String?,
         selectionArgs: Array<out String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor? {
         if (uri.path == "/domains") {
             val context = context ?: return null

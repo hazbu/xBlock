@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:gravity="center"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="16dp"
+    tools:context=".MainActivity">
 
     <TextView
         android:id="@+id/status_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="XBlock AdBlocker"
+        android:text="@string/status_header"
         android:textSize="24sp"
         android:textStyle="bold" />
 
@@ -19,22 +21,22 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="Domains loaded: 0" />
+        tools:text="Domains loaded: 0" />
 
     <TextView
         android:id="@+id/last_update_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="Last update: Never"
-        android:textColor="#999999"
-        android:textSize="12sp" />
+        android:textColor="@color/gray_text"
+        android:textSize="12sp"
+        tools:text="Last update: Never" />
 
     <Button
         android:id="@+id/update_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
-        android:text="Update Filter List" />
+        android:text="@string/update_button_text" />
 
 </LinearLayout>

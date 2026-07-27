@@ -1,3 +1,5 @@
+name=xBlock
+description=xBlock - Absolute Zero AdBlocker
 minApiVersion=102
 targetApiVersion=102
 exceptionMode=passthrough

@@ -61,14 +61,15 @@ object AdBlockUtils {
             val prefsDir = File(dataDir, "shared_prefs")
             if (prefsDir.exists()) {
                 prefsDir.setExecutable(true, false)
+                @Suppress("SetWorldReadable")
                 prefsDir.setReadable(true, false)
             }
             
-            val prefFile = File(prefsDir, "${PREFS_NAME}.xml")
+            val prefFile = File(prefsDir, "$PREFS_NAME.xml")
             if (prefFile.exists()) {
+                @Suppress("SetWorldReadable")
                 prefFile.setReadable(true, false)
             }
-        } catch (ignored: Exception) {
-        }
+        } catch (_: Exception) {}
     }
 }

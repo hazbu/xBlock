@@ -1,3 +1,8 @@
 <resources>
-    <string name="app_name">X Block</string>
+    <string name="app_name">xBlock</string>
+    <string name="status_header">xBlock AdBlocker</string>
+    <string name="domains_loaded">Domains loaded: %d</string>
+    <string name="last_update">Last update: %s</string>
+    <string name="update_button_text">Update Filter List</string>
+    <string name="never">Never</string>
 </resources>

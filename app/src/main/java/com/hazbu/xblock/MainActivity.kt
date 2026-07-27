@@ -1,12 +1,14 @@
 package com.hazbu.xblock
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
 import okhttp3.*
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -35,11 +37,12 @@ class MainActivity : AppCompatActivity() {
         refreshUI()
     }
 
+    @Suppress("DEPRECATION", "WorldReadableFiles")
     private fun getSafePrefs(): SharedPreferences {
         return try {
-            getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_WORLD_READABLE)
-        } catch (e: Exception) {
-            getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
+            getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_WORLD_READABLE)
+        } catch (_: Exception) {
+            getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_PRIVATE)
         }
     }
 
@@ -48,11 +51,13 @@ class MainActivity : AppCompatActivity() {
         val domains = prefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
         val lastUpdate = prefs.getLong(AdBlockUtils.KEY_LAST_UPDATE, 0L)
 
-        domainCountText.text = "Domains loaded: ${domains.size}"
+        domainCountText.text = getString(R.string.domains_loaded, domains.size)
 
         if (lastUpdate > 0) {
             val sdf = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
-            lastUpdateText.text = "Last update: ${sdf.format(Date(lastUpdate))}"
+            lastUpdateText.text = getString(R.string.last_update, sdf.format(Date(lastUpdate)))
+        } else {
+            lastUpdateText.text = getString(R.string.last_update, getString(R.string.never))
         }
     }
 
@@ -60,9 +65,10 @@ class MainActivity : AppCompatActivity() {
         updateButton.isEnabled = false
         val request = Request.Builder().url(AdBlockUtils.FILTER_URL).build()
 
-        client.newCall(request).enqueue(object : Callback {
+        client.newCall(request).enqueue(
+            object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                runOnUiThread {
+                Handler(Looper.getMainLooper()).post {
                     Toast.makeText(this@MainActivity, "Update failed: ${e.message}", Toast.LENGTH_SHORT).show()
                     updateButton.isEnabled = true
                 }
@@ -70,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    runOnUiThread {
+                    Handler(Looper.getMainLooper()).post {
                         Toast.makeText(this@MainActivity, "Server error: ${response.code}", Toast.LENGTH_SHORT).show()
                         updateButton.isEnabled = true
                     }
@@ -80,21 +86,22 @@ class MainActivity : AppCompatActivity() {
                 response.body?.string()?.let { body ->
                     val domains = AdBlockUtils.parseAdGuardFilter(body)
                     saveDomains(domains)
-                    runOnUiThread {
+                    Handler(Looper.getMainLooper()).post {
                         Toast.makeText(this@MainActivity, "Updated ${domains.size} domains", Toast.LENGTH_SHORT).show()
                         refreshUI()
                         updateButton.isEnabled = true
                     }
                 }
             }
-        })
+        },
+        )
     }
 
     private fun saveDomains(domains: Set<String>) {
-        getSafePrefs().edit().apply {
+        getSafePrefs().edit {
             putStringSet(AdBlockUtils.KEY_DOMAINS, domains)
             putLong(AdBlockUtils.KEY_LAST_UPDATE, System.currentTimeMillis())
-        }.commit()
+        }
         AdBlockUtils.fixPermissions(this)
     }
 }
