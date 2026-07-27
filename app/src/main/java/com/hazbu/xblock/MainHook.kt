@@ -8,7 +8,6 @@ import android.hardware.SensorEventListener
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
-import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -18,16 +17,15 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.widget.Toast
 import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
+import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.lang.reflect.Field
-import java.lang.reflect.Method
-import java.lang.reflect.Proxy
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketAddress
-import java.util.concurrent.Executor
 
 class MainHook : XposedModule() {
 
@@ -86,7 +84,7 @@ class MainHook : XposedModule() {
             return
         }
 
-        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V6.7 (Absolute Zero)")
+        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V7.0 (API 102 Hot-Reload)")
 
         val classLoader = param.classLoader
         hookApplication(classLoader)
@@ -107,6 +105,29 @@ class MainHook : XposedModule() {
         hookEconomic(classLoader)
         hookFlickerPro(classLoader)
         hookAutoReward(classLoader)
+    }
+
+    override fun onHotReloading(param: HotReloadingParam): Boolean {
+        Log.d("XBlock", "Hot reloading: Saving domain state...")
+        val state = Bundle().apply {
+            putStringArrayList("domains", ArrayList(dynamicDomains))
+        }
+        param.setSavedInstanceState(state)
+        return true 
+    }
+
+    override fun onHotReloaded(param: HotReloadedParam) {
+        super.onHotReloaded(param)
+        Log.d("XBlock", "Hot reloaded: Restoring state...")
+        val savedInstanceState = param.savedInstanceState
+        if (savedInstanceState is Bundle) {
+            val savedDomains = savedInstanceState.getStringArrayList("domains")
+            if (savedDomains != null) {
+                dynamicDomains.clear()
+                dynamicDomains.addAll(savedDomains)
+                Log.d("XBlock", "Restored ${dynamicDomains.size} domains after reload")
+            }
+        }
     }
 
     private fun hookApplication(classLoader: ClassLoader) {
@@ -147,7 +168,7 @@ class MainHook : XposedModule() {
                 Log.d("XBlock", "Successfully fetched ${dynamicDomains.size} domains")
 
                 if (dynamicDomains.isNotEmpty()) {
-                    showToast(context, "XBlock Absolute Zero Active")
+                    showToast(context, "XBlock Active (Hot-Reload Mode)")
                 }
             }
         } catch (e: Exception) {
@@ -288,7 +309,7 @@ class MainHook : XposedModule() {
                 chain.proceed()
             }
 
-            // Ghost Mode: Prevent native ad views from even starting with dimensions
+            // Ghost Mode: Constructor kill
             val ghostClasses = listOf(
                 "com.google.android.gms.ads.nativead.NativeAdView",
                 "com.applovin.mediation.ads.MaxAdView",
@@ -303,8 +324,6 @@ class MainHook : XposedModule() {
                             val view = chain.thisObject as View
                             view.visibility = View.GONE
                             view.alpha = 0f
-                            view.scaleX = 0f
-                            view.scaleY = 0f
                             Log.d("XBlock", "Ghost Mode: Constructor-level kill for $clsName")
                             chain.proceed()
                         }
@@ -322,7 +341,7 @@ class MainHook : XposedModule() {
         view.alpha = 0f
         view.scaleX = 0f
         view.scaleY = 0f
-        view.translationX = 9999f // Move it way off-screen
+        view.translationX = 9999f
         view.layoutParams?.let {
             it.width = 0
             it.height = 0
@@ -472,7 +491,6 @@ class MainHook : XposedModule() {
                 }
             }
             
-            // Secondary layer via Instrumentation
             try {
                 val instrClass = classLoader.loadClass("android.app.Instrumentation")
                 val execStartMethod = instrClass.declaredMethods.find { it.name == "execStartActivity" }
