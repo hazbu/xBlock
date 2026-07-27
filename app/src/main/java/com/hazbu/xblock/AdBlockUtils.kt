@@ -45,7 +45,12 @@ object AdBlockUtils {
                lowerName.contains("com.inmobi") ||
                lowerName.contains("com.smaato") ||
                lowerName.contains("com.tradplus") ||
-               lowerName.contains("com.miniclip.ads")
+               lowerName.contains("com.anythink") ||
+               lowerName.contains("com.bytedance.sdk.openadsdk") ||
+               lowerName.contains("com.pangle.global") ||
+               lowerName.contains("com.miniclip.ads") ||
+               lowerName.contains("com.applovin.mediation") ||
+               lowerName.contains("com.google.android.gms.ads.nativead")
     }
 
     fun fixPermissions(context: Context) {

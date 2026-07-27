@@ -8,6 +8,7 @@ import android.hardware.SensorEventListener
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -17,13 +18,16 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.widget.Toast
 import io.github.libxposed.api.XposedModule
-import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
-import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.lang.reflect.Proxy
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.SocketAddress
+import java.util.concurrent.Executor
 
 class MainHook : XposedModule() {
 
@@ -45,11 +49,14 @@ class MainHook : XposedModule() {
         "com.fyber",
         "com.inmobi",
         "com.smaato",
-        "com.tradplus"
+        "com.tradplus",
+        "com.bytedance.sdk.openadsdk",
+        "com.anythink",
+        "com.pangle.global"
     )
 
     private val voidKillMethods = listOf(
-        "loadAd", "loadAds", "load", "show", "fetchAd", "initSDK", "initialize", "initializeSdk"
+        "loadAd", "loadAds", "load", "show", "fetchAd", "initSDK", "initialize", "initializeSdk", "init", "start"
     )
 
     override fun onPackageReady(param: PackageReadyParam) {
@@ -57,12 +64,13 @@ class MainHook : XposedModule() {
         
         if (param.packageName == modulePackage) return
 
-        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V4")
+        Log.d("XBlock", "Hooking ${param.packageName} via libxposed V5.1 (Passthrough)")
 
         val classLoader = param.classLoader
         hookApplication(classLoader)
         hookDns(classLoader)
         hookDeepDns(classLoader)
+        hookSocket(classLoader)
         hookOkHttp(classLoader)
         hookCronet(classLoader)
         hookUi(classLoader)
@@ -73,29 +81,6 @@ class MainHook : XposedModule() {
         hookStealth(classLoader)
         hookStealthVPN(classLoader)
         hookAdMobIdentity(classLoader)
-    }
-
-    override fun onHotReloading(param: HotReloadingParam): Boolean {
-        Log.d("XBlock", "Hot reloading: Saving state...")
-        val state = Bundle().apply {
-            putStringArrayList("domains", ArrayList(dynamicDomains))
-        }
-        param.setSavedInstanceState(state)
-        return true
-    }
-
-    override fun onHotReloaded(param: HotReloadedParam) {
-        super.onHotReloaded(param)
-        Log.d("XBlock", "Hot reloading: Restoring state...")
-        val savedInstanceState = param.savedInstanceState
-        if (savedInstanceState is Bundle) {
-            val savedDomains = savedInstanceState.getStringArrayList("domains")
-            if (savedDomains != null) {
-                dynamicDomains.clear()
-                dynamicDomains.addAll(savedDomains)
-                Log.d("XBlock", "Recovered ${dynamicDomains.size} domains")
-            }
-        }
     }
 
     private fun hookApplication(classLoader: ClassLoader) {
@@ -212,6 +197,27 @@ class MainHook : XposedModule() {
             }
         } catch (e: Exception) {
             Log.e("XBlock", "Deep DNS Hook Error: ${e.message}")
+        }
+    }
+
+    private fun hookSocket(classLoader: ClassLoader) {
+        try {
+            val socketClass = classLoader.loadClass("java.net.Socket")
+            val connectMethod = socketClass.getDeclaredMethod("connect", SocketAddress::class.java, Int::class.javaPrimitiveType)
+            
+            hook(connectMethod).intercept { chain ->
+                val address = chain.args[0] as? InetSocketAddress
+                if (address != null) {
+                    val host = address.hostString // Avoid reverse DNS lookup
+                    if (isAdDomain(host)) {
+                        Log.d("XBlock", "Socket blocking: $host")
+                        throw IOException("Connection blocked by XBlock")
+                    }
+                }
+                chain.proceed()
+            }
+        } catch (e: Exception) {
+            Log.e("XBlock", "Socket Hook Error: ${e.message}")
         }
     }
 
@@ -334,12 +340,10 @@ class MainHook : XposedModule() {
 
     private fun hookGameAds(classLoader: ClassLoader) {
         try {
-            // Aggressive Void Killing for ad SDKs
+            // 1. Aggressive Void Killing for ad SDKs
             for (pkg in adPackages) {
                 try {
-                    // This is a generic approach to find and block methods by name in ad packages
-                    // We target methods that return void and are common ad triggers
-                    val classes = listOf("Ads", "AdMob", "UnityAds", "AppLovin", "Vungle", "IronSource")
+                    val classes = listOf("Ads", "AdMob", "UnityAds", "AppLovin", "Vungle", "IronSource", "ATSDK", "TTAdSdk", "PAGSdk")
                     for (clsName in classes) {
                         try {
                             val cls = classLoader.loadClass("$pkg.$clsName")
@@ -356,36 +360,51 @@ class MainHook : XposedModule() {
                 } catch (ignored: Exception) {}
             }
 
-            // Specific Unity Hooks
+            // 2. AppLovin MAX Sabotage
             try {
-                val unityAdsClass = classLoader.loadClass("com.unity3d.ads.UnityAds")
-                unityAdsClass.methods.find { it.name == "initialize" }?.let { method ->
-                    hook(method).intercept { chain ->
-                        Log.d("XBlock", "UnityAds: Forcing Test Mode")
-                        val args = chain.args.toMutableList()
-                        for (i in args.indices) {
-                            if (args[i] is Boolean) args[i] = true
-                        }
-                        chain.proceed() 
-                    }
-                }
-                unityAdsClass.methods.find { it.name == "show" }?.let { method ->
+                val maxAdViewClass = classLoader.loadClass("com.applovin.mediation.ads.MaxAdView")
+                maxAdViewClass.methods.find { it.name == "loadAd" }?.let { method ->
                     hook(method).intercept {
-                        Log.d("XBlock", "UnityAds: Blocked show() call")
-                        null 
+                        Log.d("XBlock", "AppLovin MAX: Blocked loadAd()")
+                        null
                     }
                 }
+                
+                val nativeLoaderClass = classLoader.loadClass("com.applovin.mediation.nativeAds.MaxNativeAdLoader")
+                nativeLoaderClass.methods.find { it.name == "loadAd" }?.let { method ->
+                    hook(method).intercept {
+                        Log.d("XBlock", "AppLovin MAX: Blocked Native loadAd()")
+                        null
+                    }
+                }
+                
+                // Deep AppLovin hook
+                try {
+                    val implClass = classLoader.loadClass("com.applovin.impl.mediation.ads.MaxAdViewImpl")
+                    implClass.methods.find { it.name == "loadAd" }?.let { method ->
+                        hook(method).intercept {
+                            Log.d("XBlock", "AppLovin MAX Impl: Blocked loadAd()")
+                            null
+                        }
+                    }
+                } catch (ignored: Exception) {}
             } catch (ignored: Exception) {}
 
-            // Specific AdMob AdActivity Auto-close
+            // 3. Unity Ads & Token destruction
             try {
-                val adActivityClass = classLoader.loadClass("com.google.android.gms.ads.AdActivity")
-                adActivityClass.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
-                    hook(method).intercept { chain ->
-                        val activity = chain.thisObject as Activity
-                        Log.d("XBlock", "AdMob: Auto-closing AdActivity")
-                        activity.finish()
-                        chain.proceed()
+                val tokenStorageClass = classLoader.loadClass("com.unity3d.services.ads.token.TokenStorage")
+                tokenStorageClass.getDeclaredMethod("getToken").let { method ->
+                    hook(method).intercept {
+                        Log.d("XBlock", "UnityAds: Token generation prevented")
+                        null
+                    }
+                }
+                
+                val deviceReaderClass = classLoader.loadClass("com.unity3d.services.core.device.reader.DeviceInfoReader")
+                deviceReaderClass.getDeclaredMethod("getDeviceInfo").let { method ->
+                    hook(method).intercept {
+                        Log.d("XBlock", "UnityAds: Device info gathering prevented")
+                        emptyMap<String, Any>()
                     }
                 }
             } catch (ignored: Exception) {}
@@ -409,6 +428,23 @@ class MainHook : XposedModule() {
                     chain.proceed()
                 }
             }
+            
+            try {
+                val instrClass = classLoader.loadClass("android.app.Instrumentation")
+                val execStartMethod = instrClass.declaredMethods.find { it.name == "execStartActivity" }
+                if (execStartMethod != null) {
+                    hook(execStartMethod).intercept { chain ->
+                        val intent = chain.args.find { it is Intent } as? Intent
+                        if (intent != null && isAdIntent(intent)) {
+                            Log.d("XBlock", "Instrumentation blocking: Ad Activity prevented")
+                            null
+                        } else {
+                            chain.proceed()
+                        }
+                    }
+                }
+            } catch (ignored: Exception) {}
+
         } catch (e: Exception) {
             Log.e("XBlock", "Intent Hook Error: ${e.message}")
         }
@@ -470,13 +506,24 @@ class MainHook : XposedModule() {
 
     private fun hookAdMobIdentity(classLoader: ClassLoader) {
         try {
+            try {
+                val adIdInfoClass = classLoader.loadClass("com.google.android.gms.ads.identifier.AdvertisingIdClient\$Info")
+                val getIdMethod = adIdInfoClass.getDeclaredMethod("getId")
+                hook(getIdMethod).intercept {
+                    Log.d("XBlock", "Stealth: Spoofing GAID to Zeros")
+                    "00000000-0000-0000-0000-000000000000"
+                }
+            } catch (ignored: Exception) {}
+
             val bundleClass = classLoader.loadClass("android.os.BaseBundle")
             val getMethod = bundleClass.getDeclaredMethod("get", String::class.java)
             
             hook(getMethod).intercept { chain ->
                 val key = chain.args[0] as? String
-                if (key == "com.google.android.gms.ads.APPLICATION_ID") {
-                    Log.d("XBlock", "Stealth: Spoofing AdMob Application ID")
+                if (key == "com.google.android.gms.ads.APPLICATION_ID" || 
+                    key == "bu_app_id" || 
+                    key == "anythink_app_id") {
+                    Log.d("XBlock", "Stealth: Spoofing App Identity for $key")
                     return@intercept "ca-app-pub-0000000000000000~0000000000"
                 }
                 chain.proceed()
@@ -490,13 +537,18 @@ class MainHook : XposedModule() {
 
     private fun isAdIntent(intent: Intent): Boolean {
         val data = try { intent.dataString?.lowercase() ?: "" } catch (ignored: Exception) { "" }
+        val component = intent.component?.className?.lowercase() ?: ""
         
         return data.contains("googleads") || 
                data.contains("doubleclick") ||
                data.contains("adservice") ||
                data.contains("pagead") ||
+               data.contains("googleadservices") ||
                data.contains("play.google.com/store/apps/details?id=") ||
                data.contains("market://details?id=") ||
-               data.contains("ads")
+               data.contains("ads") ||
+               component.contains("adactivity") ||
+               component.contains("adunitactivity") ||
+               component.contains("applovin")
     }
 }
