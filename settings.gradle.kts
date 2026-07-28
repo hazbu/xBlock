@@ -23,6 +23,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "X Block"
+rootProject.name = "xBlock"
 include(":app")
  

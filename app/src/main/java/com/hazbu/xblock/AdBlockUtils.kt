@@ -1,18 +1,25 @@
 package com.hazbu.xblock
 
 import android.content.Context
+import org.json.JSONObject
 import java.io.File
 
 object AdBlockUtils {
     const val FILTER_URL = "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+    const val EXODUS_URL = "https://reports.exodus-privacy.eu.org/api/trackers"
+    
     const val PREFS_NAME = "ad_prefs"
     const val KEY_DOMAINS = "domains"
-    const val KEY_LAST_UPDATE = "last_update"
+    const val KEY_PACKAGES = "packages"
+    const val KEY_LAST_UPDATE_ADGUARD = "last_update"
+    const val KEY_LAST_UPDATE_EXODUS = "last_update_exodus"
+    const val KEY_IS_DOWNLOADING_ADGUARD = "is_downloading_adguard"
+    const val KEY_IS_DOWNLOADING_EXODUS = "is_downloading_exodus"
+    const val KEY_JUST_UPDATED = "just_updated"
 
-    fun parseAdGuardFilter(content: String): Set<String> {
+    fun parseAdGuardFilter(reader: java.io.Reader): Set<String> {
         val domains = mutableSetOf<String>()
-        val lines = content.split("\n")
-        for (line in lines) {
+        reader.forEachLine { line ->
             val trimmed = line.trim()
             if (trimmed.startsWith("||")) {
                 val caretIndex = trimmed.indexOf("^")
@@ -27,30 +34,34 @@ object AdBlockUtils {
         return domains
     }
 
-    fun isAdView(className: String): Boolean {
+    fun parseExodusFilter(reader: java.io.Reader): Set<String> {
+        val packages = mutableSetOf<String>()
+        try {
+            val json = reader.readText()
+            val root = JSONObject(json)
+            val trackers = root.optJSONObject("trackers") ?: return emptySet()
+            
+            val keys = trackers.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val tracker = trackers.getJSONObject(key)
+                val signature = tracker.optString("code_signature", "")
+                if (signature.isNotEmpty()) {
+                    signature.split("|").forEach { pkg ->
+                        val cleaned = pkg.trim().trimEnd('.')
+                        if (cleaned.isNotEmpty()) {
+                            packages.add(cleaned)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return packages
+    }
+
+    fun isAdClass(className: String, adPackages: Set<String>): Boolean {
         val lowerName = className.lowercase()
-        return lowerName.contains("com.google.android.gms.ads") ||
-               lowerName.contains("com.google.unity.ads") ||
-               lowerName.contains("com.applovin") ||
-               lowerName.contains("com.mbridge.msdk") ||
-               lowerName.contains("com.facebook.ads") ||
-               lowerName.contains("com.unity3d.ads") ||
-               lowerName.contains("com.unity3d.services") ||
-               lowerName.contains("com.vungle.ads") ||
-               lowerName.contains("com.vungle.warren") ||
-               lowerName.contains("com.ironsource") ||
-               lowerName.contains("com.adcolony") ||
-               lowerName.contains("com.chartboost") ||
-               lowerName.contains("com.fyber") ||
-               lowerName.contains("com.inmobi") ||
-               lowerName.contains("com.smaato") ||
-               lowerName.contains("com.tradplus") ||
-               lowerName.contains("com.anythink") ||
-               lowerName.contains("com.bytedance.sdk.openadsdk") ||
-               lowerName.contains("com.pangle.global") ||
-               lowerName.contains("com.miniclip.ads") ||
-               lowerName.contains("com.applovin.mediation") ||
-               lowerName.contains("com.google.android.gms.ads.nativead")
+        return adPackages.any { lowerName.startsWith(it.lowercase()) }
     }
 
     fun fixPermissions(context: Context) {

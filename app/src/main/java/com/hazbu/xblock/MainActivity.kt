@@ -1,107 +1,128 @@
 package com.hazbu.xblock
 
-import android.content.SharedPreferences
+import android.content.Context
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
-import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.edit
-import okhttp3.*
-import java.io.IOException
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import androidx.work.*
 import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var domainCountText: TextView
-    private lateinit var lastUpdateText: TextView
-    private lateinit var updateButton: Button
-
-    private val client = OkHttpClient()
+    private lateinit var adguardStatus: TextView
+    private lateinit var exodusStatus: TextView
+    private lateinit var btnAdGuard: Button
+    private lateinit var btnExodus: Button
+    private lateinit var btnDeleteAdGuard: Button
+    private lateinit var btnDeleteExodus: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        domainCountText = findViewById(R.id.domain_count_text)
-        lastUpdateText = findViewById(R.id.last_update_text)
-        updateButton = findViewById(R.id.update_button)
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.updatePadding(
+                left = systemBars.left + (24 * resources.displayMetrics.density).toInt(),
+                top = systemBars.top,
+                right = systemBars.right + (24 * resources.displayMetrics.density).toInt(),
+                bottom = systemBars.bottom
+            )
+            insets
+        }
 
-        updateButton.setOnClickListener {
-            downloadFilter()
+        adguardStatus = findViewById(R.id.adguard_status)
+        exodusStatus = findViewById(R.id.exodus_status)
+        btnAdGuard = findViewById(R.id.btn_update_adguard)
+        btnExodus = findViewById(R.id.btn_update_exodus)
+        btnDeleteAdGuard = findViewById(R.id.btn_delete_adguard)
+        btnDeleteExodus = findViewById(R.id.btn_delete_exodus)
+
+        btnAdGuard.setOnClickListener { triggerUpdate(FilterUpdateWorker.TYPE_ADGUARD) }
+        btnExodus.setOnClickListener { triggerUpdate(FilterUpdateWorker.TYPE_EXODUS) }
+
+        btnDeleteAdGuard.setOnClickListener {
+            deleteFilter(AdBlockUtils.KEY_DOMAINS, AdBlockUtils.KEY_LAST_UPDATE_ADGUARD)
+        }
+        btnDeleteExodus.setOnClickListener {
+            deleteFilter(AdBlockUtils.KEY_PACKAGES, AdBlockUtils.KEY_LAST_UPDATE_EXODUS)
         }
 
         refreshUI()
     }
 
-    @Suppress("DEPRECATION", "WorldReadableFiles")
-    private fun getSafePrefs(): SharedPreferences {
-        return try {
-            getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_WORLD_READABLE)
-        } catch (_: Exception) {
-            getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_PRIVATE)
+    private fun deleteFilter(vararg keys: String) {
+        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            keys.forEach { remove(it) }
+        }.apply()
+        AdBlockUtils.fixPermissions(this)
+        refreshUI()
+    }
+
+    private fun triggerUpdate(type: String) {
+        val data = Data.Builder()
+            .putString(FilterUpdateWorker.KEY_TYPE, type)
+            .build()
+
+        val request = OneTimeWorkRequestBuilder<FilterUpdateWorker>()
+            .setInputData(data)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "Update_$type",
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+
+        val targetButton = if (type == FilterUpdateWorker.TYPE_EXODUS) btnExodus else btnAdGuard
+        
+        // Observe progress
+        WorkManager.getInstance(this).getWorkInfoByIdLiveData(request.id).observe(this) { info ->
+            if (info?.state == WorkInfo.State.SUCCEEDED || info?.state == WorkInfo.State.FAILED) {
+                refreshUI()
+                targetButton.isEnabled = true
+            } else {
+                targetButton.isEnabled = false
+            }
         }
     }
 
     private fun refreshUI() {
-        val prefs = getSafePrefs()
-        val domains = prefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
-        val lastUpdate = prefs.getLong(AdBlockUtils.KEY_LAST_UPDATE, 0L)
-
-        domainCountText.text = getString(R.string.domains_loaded, domains.size)
-
-        if (lastUpdate > 0) {
-            val sdf = SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault())
-            lastUpdateText.text = getString(R.string.last_update, sdf.format(Date(lastUpdate)))
+        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
+        val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
+        
+        // AdGuard
+        val isDownloadingAdGuard = prefs.getBoolean(AdBlockUtils.KEY_IS_DOWNLOADING_ADGUARD, false)
+        if (isDownloadingAdGuard) {
+            adguardStatus.text = "Status: Updating..."
+            btnAdGuard.isEnabled = false
         } else {
-            lastUpdateText.text = getString(R.string.last_update, getString(R.string.never))
+            val domains = prefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
+            val lastUpdateAdGuard = prefs.getLong(AdBlockUtils.KEY_LAST_UPDATE_ADGUARD, 0L)
+            val adguardDateStr = if (lastUpdateAdGuard > 0) sdf.format(Date(lastUpdateAdGuard)) else "Never"
+            adguardStatus.text = "Count: ${domains.size}\nLast: $adguardDateStr"
+            btnAdGuard.isEnabled = true
         }
-    }
 
-    private fun downloadFilter() {
-        updateButton.isEnabled = false
-        val request = Request.Builder().url(AdBlockUtils.FILTER_URL).build()
-
-        client.newCall(request).enqueue(
-            object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this@MainActivity, "Update failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                    updateButton.isEnabled = true
-                }
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(this@MainActivity, "Server error: ${response.code}", Toast.LENGTH_SHORT).show()
-                        updateButton.isEnabled = true
-                    }
-                    return
-                }
-
-                response.body?.string()?.let { body ->
-                    val domains = AdBlockUtils.parseAdGuardFilter(body)
-                    saveDomains(domains)
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(this@MainActivity, "Updated ${domains.size} domains", Toast.LENGTH_SHORT).show()
-                        refreshUI()
-                        updateButton.isEnabled = true
-                    }
-                }
-            }
-        },
-        )
-    }
-
-    private fun saveDomains(domains: Set<String>) {
-        getSafePrefs().edit {
-            putStringSet(AdBlockUtils.KEY_DOMAINS, domains)
-            putLong(AdBlockUtils.KEY_LAST_UPDATE, System.currentTimeMillis())
+        // Exodus
+        val isDownloadingExodus = prefs.getBoolean(AdBlockUtils.KEY_IS_DOWNLOADING_EXODUS, false)
+        if (isDownloadingExodus) {
+            exodusStatus.text = "Status: Updating..."
+            btnExodus.isEnabled = false
+        } else {
+            val packages = prefs.getStringSet(AdBlockUtils.KEY_PACKAGES, emptySet()) ?: emptySet()
+            val lastUpdateExodus = prefs.getLong(AdBlockUtils.KEY_LAST_UPDATE_EXODUS, 0L)
+            val exodusDateStr = if (lastUpdateExodus > 0) sdf.format(Date(lastUpdateExodus)) else "Never"
+            exodusStatus.text = "Count: ${packages.size}\nLast: $exodusDateStr"
+            btnExodus.isEnabled = true
         }
-        AdBlockUtils.fixPermissions(this)
     }
 }

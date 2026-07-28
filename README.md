@@ -1,53 +1,41 @@
-# XBlock AdBlocker - Android Xposed Module
+# xBlock AdBlocker - Android Xposed Module
 
-XBlock is a lightweight Xposed module designed to block advertisements and trackers at the DNS, UI, and WebView levels. It is compatible with **LSPosed** (Root) and **NPatch / LSPatch** (Non-Root).
+xBlock is a lightweight, data-driven Xposed module designed to block advertisements and trackers at the DNS, UI, and WebView levels. It follows modern Android 15 standards and is compatible with **LSPosed** (Root) and **NPatch / LSPatch** (Non-Root).
 
 ## 🚀 Features
 
-- **DNS Sinkholing**: Intercepts `java.net.InetAddress` to redirect ad domains to `0.0.0.0` (Sinkhole), preventing ads from loading without crashing the app.
-- **UI Ad-SDK Hiding**: Hooks into `ViewGroup.addView` to detect and hide common ad SDK views (AdMob, Facebook Ads, AppLovin, etc.) by setting their dimensions to 0x0 and visibility to `GONE`.
-- **WebView Interception**: Intercepts `WebView` requests to block ad domains directly at the browser level using `shouldInterceptRequest`.
-- **Dynamic AdGuard Filters**: Fetch the latest ad-blocking database directly from AdGuard's official DNS filter list.
-- **Management UI**: A simple interface to manually update filter lists and monitor the number of blocked domains.
-
-## 🛠 Installation
-
-### Prerequisites
-- Android Studio Ladybug or newer.
-- A device with **LSPosed** installed (for Root) or **NPatch/LSPatch** (for Non-Root).
-
-### Build Instructions
-1. Clone the repository.
-2. Open in Android Studio.
-3. Build the project:
-   ```bash
-   ./gradlew :app:assembleDebug
-   ```
-4. The APK will be generated at `app/build/outputs/apk/debug/app-debug.apk`.
+- **Double Defense Logic**: Combines network-level DNS blocking with application-level UI/SDK hiding.
+- **DNS Sinkholing**: Intercepts `java.net.InetAddress` and `DnsResolver` to redirect ad domains to `0.0.0.0` (Sinkhole).
+- **UI & Intent Hiding**: Uses the **Exodus SDK** database to identify and hide ad-related views and prevent ad activity/service launches.
+- **WebView Interception**: Blocks ad requests directly in `WebView` using `shouldInterceptRequest`.
+- **Purely Data-Driven**: No hardcoded ad lists. All blocking logic is driven by your downloaded AdGuard and Exodus filter lists.
+- **Modern UI**: Clean Android 15 Edge-to-Edge interface with independent update tracking for each filter list.
 
 ## 📖 Usage
 
-### Automated Releases (CI/CD)
-This repository is configured with GitHub Actions. Every time you push a tag starting with `v` (e.g., `v1.0`), an APK will be automatically built and attached to a new GitHub Release.
-
 ### Method 1: LSPosed (Rooted)
-1. Install the `app-debug.apk` on your device.
+1. Install the `xBlock` APK on your device.
 2. Open the **LSPosed Manager**.
-3. Enable the **XBlock** module.
+3. Enable the **xBlock** module.
 4. Select the **Scope** (apps you want to block ads in).
 5. Force stop or restart the target apps.
 
 ### Method 2: NPatch / LSPatch (Non-Root)
-1. Install the `app-debug.apk` on your device.
+1. Install the `xBlock` APK on your device.
 2. Open **NPatch** or **LSPatch**.
 3. Create a new patch for your target application.
-4. Select **XBlock** as the module to inject.
+4. Select **xBlock** as the module to inject.
 5. Install and run the patched application.
 
 ## 🏗 Technical Details
-- **Hooking**: Uses `XposedHelpers` to hook `java.net.InetAddress`, `android.view.ViewGroup`, and `android.webkit.WebViewClient`.
-- **IPC**: Uses `XSharedPreferences` (LSPosed API 93+) for secure, cross-process data sharing between the module app and hooked processes.
-- **Filters**: Parses AdGuard DNS syntax (`||domain^`) into a high-performance `HashSet` for O(1) domain lookups.
+- **Hooking API**: Uses the modern **LibXposed API** (`v102.0.0`) for high-performance and stable hooking.
+- **Minimum Xposed Version**: 101.
+- **Data Sources (Online Filters)**:
+    - [AdGuard DNS Filter](https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt) for network-level blocking.
+    - [Exodus Privacy Trackers](https://reports.exodus-privacy.eu.org/api/trackers) for SDK/Package identification.
+- **Data Sharing**: Implements a `ContentProvider` for real-time, efficient data sharing between the manager app and hooked processes.
+- **Memory Efficiency**: Uses streaming parsers to handle large filter lists without high memory overhead.
+- **Android 15 Ready**: Supports Edge-to-Edge display and handled Window Insets for the latest Android versions.
 
 ## ⚠️ Disclaimer
 This tool is intended for **educational and personal use**. Some applications may have terms of service that prohibit ad-blocking. The developers are not responsible for any misuse or legal consequences of using this software.

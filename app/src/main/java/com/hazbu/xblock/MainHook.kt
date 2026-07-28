@@ -3,9 +3,6 @@ package com.hazbu.xblock
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.hardware.Sensor
-import android.hardware.SensorEventListener
-import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -31,48 +28,7 @@ class MainHook : XposedModule() {
     private val modulePackage = "com.hazbu.xblock"
     private val TAG = "xBlock"
     private var dynamicDomains = mutableSetOf<String>()
-
-    private val adPackages = listOf(
-        "com.google.android.gms.ads",
-        "com.google.unity.ads",
-        "com.applovin",
-        "com.mbridge.msdk",
-        "com.facebook.ads",
-        "com.unity3d.ads",
-        "com.unity3d.services",
-        "com.vungle",
-        "com.ironsource",
-        "com.adcolony",
-        "com.chartboost",
-        "com.fyber",
-        "com.inmobi",
-        "com.smaato",
-        "com.tradplus",
-        "com.bytedance.sdk.openadsdk",
-        "com.anythink",
-        "com.pangle.global",
-        "com.moloco.sdk",
-        "com.mintegral.msdk",
-        "com.google.android.gms.ads.admanager",
-    )
-
-    private val systemSkipList = listOf(
-        "android",
-        "com.android.vending",
-        "com.google.android.gms",
-        "com.google.android.gsf",
-        "com.android.providers.downloads",
-        "com.google.android.apps.docs",
-        "com.google.android.webview",
-        "com.google.android.syncadapters.contacts",
-        "com.google.android.finsky",
-        "com.google.android.play.games",
-        "com.google.android.play.core"
-    )
-
-    private val voidKillMethods = listOf(
-        "loadAd", "loadAds", "load", "show", "fetchAd", "initSDK", "initialize", "initializeSdk", "init", "start", "showAd", "loadInterstitial", "loadRewardedAd", "startAutoRefresh"
-    )
+    private var dynamicPackages = mutableSetOf<String>()
 
     override fun onPackageReady(param: PackageReadyParam) {
         super.onPackageReady(param)
@@ -81,12 +37,6 @@ class MainHook : XposedModule() {
 
         if (param.packageName == modulePackage) return
         
-        // Safety: Never hook critical system processes
-        if (systemSkipList.contains(param.packageName)) {
-            Log.d(TAG, "Skipping critical system package: ${param.packageName}")
-            return
-        }
-
         Log.d(TAG, "Hooking ${param.packageName} via libxposed")
 
         val classLoader = param.classLoader
@@ -98,16 +48,9 @@ class MainHook : XposedModule() {
         hookCronet(classLoader)
         hookUi(classLoader)
         hookWebView(classLoader)
-        hookGameAds(classLoader)
         hookIntents(classLoader)
         hookService(classLoader)
-        hookSensors(classLoader)
-        hookStealthVPN(classLoader)
-        hookAdMobIdentity(classLoader)
         hookNuclear(classLoader)
-        hookEconomic(classLoader)
-        hookFlickerPro(classLoader)
-        hookAutoReward(classLoader)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -156,6 +99,22 @@ class MainHook : XposedModule() {
 
     private fun fetchDomainsFromProvider(context: Context) {
         try {
+            // First query status
+            val statusUri = "content://com.hazbu.xblock.provider/status".toUri()
+            val statusCursor = context.contentResolver.query(statusUri, null, null, null, null)
+            var count = 0
+
+            if (statusCursor != null) {
+                if (statusCursor.moveToFirst()) {
+                    count = statusCursor.getInt(0)
+                }
+                statusCursor.close()
+            }
+
+            // Show appropriate Toast
+            showToast(context, "xBlock active : $count filter")
+
+            // Then fetch domains
             val uri = "content://com.hazbu.xblock.provider/domains".toUri()
             val cursor = context.contentResolver.query(uri, null, null, null, null)
             
@@ -170,13 +129,23 @@ class MainHook : XposedModule() {
                 dynamicDomains.clear()
                 dynamicDomains.addAll(tempSet)
                 Log.d(TAG, "Successfully fetched ${dynamicDomains.size} domains")
+            }
 
-                if (dynamicDomains.isNotEmpty()) {
-                    showToast(context, "xBlock Active")
+            // Finally fetch packages
+            val pkgUri = "content://com.hazbu.xblock.provider/packages".toUri()
+            val pkgCursor = context.contentResolver.query(pkgUri, null, null, null, null)
+            if (pkgCursor != null) {
+                val tempSet = mutableSetOf<String>()
+                while (pkgCursor.moveToNext()) {
+                    tempSet.add(pkgCursor.getString(0))
                 }
+                pkgCursor.close()
+                dynamicPackages.clear()
+                dynamicPackages.addAll(tempSet)
+                Log.d(TAG, "Successfully fetched ${dynamicPackages.size} packages from Exodus")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch domains: ${e.message}")
+            Log.e(TAG, "Failed to fetch data from provider: ${e.message}")
         }
     }
 
@@ -306,38 +275,23 @@ class MainHook : XposedModule() {
             
             hook(addViewMethod).intercept { chain ->
                 val view = chain.args[0] as? View
-                if (view != null && AdBlockUtils.isAdView(view.javaClass.name)) {
+                if (view != null && AdBlockUtils.isAdClass(view.javaClass.name, dynamicPackages)) {
                     Log.d(TAG, "UI blocking: Hiding ${view.javaClass.name}")
                     recursiveHide(view)
                 }
                 chain.proceed()
             }
 
-            // Ghost Mode: Constructor kill with post-init safety
-            val ghostClasses = listOf(
-                "com.google.android.gms.ads.nativead.NativeAdView",
-                "com.applovin.mediation.ads.MaxAdView",
-                "com.applovin.adview.AppLovinAdView",
-                "com.google.android.gms.ads.admanager.AdManagerAdView",
-                "com.google.android.gms.ads.BaseAdView"
-            )
-            for (clsName in ghostClasses) {
-                try {
-                    val cls = classLoader.loadClass(clsName)
-                    cls.declaredConstructors.forEach { constructor ->
-                        hook(constructor).intercept { chain ->
-                            // MUST call proceed() first so the View and its RenderNode are created
-                            val result = chain.proceed()
-                            val view = chain.thisObject as View
-                            try {
-                                view.visibility = View.GONE
-                                view.alpha = 0f
-                            } catch (_: Exception) {}
-                            result
-                        }
+            try {
+                val viewClass = classLoader.loadClass("android.view.View")
+                hook(viewClass.getDeclaredMethod("setVisibility", Int::class.javaPrimitiveType)).intercept { chain ->
+                    val view = chain.thisObject as View
+                    if (AdBlockUtils.isAdClass(view.javaClass.name, dynamicPackages)) {
+                        chain.args[0] = View.GONE
                     }
-                } catch (_: Exception) {}
-            }
+                    chain.proceed()
+                }
+            } catch (_: Exception) {}
 
         } catch (e: Exception) {
             Log.e(TAG, "UI Hook Error: ${e.message}")
@@ -424,71 +378,6 @@ class MainHook : XposedModule() {
         }
     }
 
-    private fun hookGameAds(classLoader: ClassLoader) {
-        try {
-            for (pkg in adPackages) {
-                try {
-                    val classes = listOf("Ads", "AdMob", "UnityAds", "AppLovin", "Vungle", "IronSource", "ATSDK", "TTAdSdk", "PAGSdk")
-                    for (clsName in classes) {
-                        try {
-                            val cls = classLoader.loadClass("$pkg.$clsName")
-                            for (method in cls.declaredMethods) {
-                                if (voidKillMethods.contains(method.name) && method.returnType == Void.TYPE) {
-                                    hook(method).intercept {
-                                        Log.d(TAG, "Void-killed: ${cls.name}.${method.name}")
-                                        null
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {}
-                    }
-                } catch (_: Exception) {}
-            }
-
-            // Stable AdMob load block
-            try {
-                val interstitialAdClass = classLoader.loadClass("com.google.android.gms.ads.interstitial.InterstitialAd")
-                interstitialAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
-                    hook(method).intercept {
-                        Log.d(TAG, "AdMob: Blocked Interstitial load()")
-                        null 
-                    }
-                }
-
-                val rewardedAdClass = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
-                rewardedAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
-                    hook(method).intercept {
-                        Log.d(TAG, "AdMob: Blocked Rewarded load()")
-                        null
-                    }
-                }
-
-                val adManagerInterClass = classLoader.loadClass("com.google.android.gms.ads.admanager.AdManagerInterstitialAd")
-                adManagerInterClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
-                    hook(method).intercept {
-                        Log.d(TAG, "AdManager: Blocked Interstitial load()")
-                        null
-                    }
-                }
-            } catch (_: Exception) {}
-
-            try {
-                val bridgeClass = classLoader.loadClass("com.applovin.mediation.unity.MaxUnityAdManager")
-                bridgeClass.declaredMethods.forEach { method ->
-                    if (method.name.startsWith("load") || method.name.startsWith("show")) {
-                        hook(method).intercept {
-                            Log.d(TAG, "AppLovin Bridge Blocked: ${method.name}()")
-                            null
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-
-        } catch (e: Exception) {
-            Log.e(TAG, "GameAds Hook Error: ${e.message}")
-        }
-    }
-
     @Suppress("PrivateApi")
     private fun hookIntents(classLoader: ClassLoader) {
         try {
@@ -547,258 +436,45 @@ class MainHook : XposedModule() {
         }
     }
 
-    private fun hookSensors(classLoader: ClassLoader) {
-        try {
-            val sensorManagerClass = classLoader.loadClass("android.hardware.SensorManager")
-            val registerMethod = sensorManagerClass.getDeclaredMethod("registerListener", 
-                SensorEventListener::class.java, Sensor::class.java, Int::class.javaPrimitiveType)
-            
-            hook(registerMethod).intercept { chain ->
-                val sensor = chain.args[1] as? Sensor
-                if (sensor != null && (sensor.type == Sensor.TYPE_ACCELEROMETER || sensor.type == Sensor.TYPE_GYROSCOPE)) {
-                    return@intercept false 
-                }
-                chain.proceed()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Sensor Hook Error: ${e.message}")
-        }
-    }
-
-    private fun hookStealthVPN(classLoader: ClassLoader) {
-        try {
-            val ncClass = classLoader.loadClass("android.net.NetworkCapabilities")
-            val hasCapabilityMethod = ncClass.getDeclaredMethod("hasTransport", Int::class.java)
-            
-            hook(hasCapabilityMethod).intercept { chain ->
-                val transport = chain.args[0] as? Int
-                if (transport == NetworkCapabilities.TRANSPORT_VPN) {
-                    return@intercept false
-                }
-                chain.proceed()
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun hookAdMobIdentity(classLoader: ClassLoader) {
-        try {
-            val bundleClass = classLoader.loadClass("android.os.BaseBundle")
-            val getMethod = bundleClass.getDeclaredMethod("get", String::class.java)
-            
-            hook(getMethod).intercept { chain ->
-                val key = chain.args[0] as? String
-                if (key == "com.google.android.gms.ads.APPLICATION_ID" || 
-                    key == "bu_app_id" || 
-                    key == "anythink_app_id") {
-                    return@intercept "ca-app-pub-0000000000000000~0000000000"
-                }
-                chain.proceed()
-            }
-        } catch (_: Exception) {}
-    }
-
     private fun hookNuclear(classLoader: ClassLoader) {
-        val activities = listOf(
-            "com.google.android.gms.ads.AdActivity",
-            "com.applovin.adview.AppLovinFullscreenActivity",
-            "com.applovin.sdk.AppLovinWebViewActivity"
-        )
-        for (actName in activities) {
-            try {
-                val cls = classLoader.loadClass(actName)
-                cls.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
-                    hook(method).intercept { chain ->
-                        val activity = chain.thisObject as Activity
-                        Log.d(TAG, "Nuclear: Killing ad activity ${activity.javaClass.name}")
-                        activity.finish()
-                        null
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // Deep AdMob Overlay kill
         try {
-            val parcelClass = classLoader.loadClass("com.google.android.gms.ads.internal.overlay.AdOverlayInfoParcel")
-            parcelClass.declaredConstructors.forEach { constructor ->
-                hook(constructor).intercept { chain ->
-                    Log.d(TAG, "Nuclear: Nullifying AdOverlayInfoParcel")
-                    chain.proceed()
+            val activityClass = classLoader.loadClass("android.app.Activity")
+            val onCreateMethod = activityClass.getDeclaredMethod("onCreate", Bundle::class.java)
+            
+            hook(onCreateMethod).intercept { chain ->
+                val activity = chain.thisObject as Activity
+                val className = activity.javaClass.name
+                
+                if (AdBlockUtils.isAdClass(className, dynamicPackages)) {
+                    Log.d(TAG, "Nuclear: Killing ad activity $className")
+                    activity.finish()
+                    return@intercept null
                 }
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun hookEconomic(classLoader: ClassLoader) {
-        try {
-            // Disable Revenue reporting
-            val listeners = listOf(
-                "com.google.android.gms.ads.interstitial.InterstitialAd" to "setOnPaidEventListener",
-                "com.google.android.gms.ads.rewarded.RewardedAd" to "setOnPaidEventListener",
-                "com.applovin.mediation.ads.MaxAdView" to "setRevenueListener",
-                "com.applovin.mediation.ads.MaxInterstitialAd" to "setRevenueListener",
-                "com.applovin.mediation.ads.MaxRewardedAd" to "setRevenueListener"
-            )
-
-            for ((clsName, methodName) in listeners) {
-                try {
-                    val cls = classLoader.loadClass(clsName)
-                    cls.declaredMethods.find { it.name == methodName }?.let { method ->
-                        hook(method).intercept {
-                            Log.d(TAG, "Economic: Blocked $methodName for $clsName")
-                            null 
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-
-            // Zero out reported values
-            try {
-                val adValueClass = classLoader.loadClass("com.google.android.gms.ads.AdValue")
-                adValueClass.getDeclaredMethod("getValueMicros").let { method ->
-                    hook(method).intercept { 0L }
-                }
-            } catch (_: Exception) {}
-
-        } catch (_: Exception) {}
-    }
-
-    private fun hookFlickerPro(classLoader: ClassLoader) {
-        try {
-            val adViewClasses = listOf(
-                "com.google.android.gms.ads.BaseAdView",
-                "com.google.android.gms.ads.nativead.NativeAdView",
-                "com.applovin.mediation.ads.MaxAdView",
-                "com.applovin.adview.AppLovinAdView",
-                "com.google.android.gms.ads.admanager.AdManagerAdView"
-            )
-            for (clsName in adViewClasses) {
-                try {
-                    val cls = classLoader.loadClass(clsName)
-                    
-                    // Force visibility to stay GONE
-                    cls.getDeclaredMethod("setVisibility", Int::class.javaPrimitiveType).let { method ->
-                        hook(method).intercept { chain ->
-                            chain.args[0] = View.GONE
-                            chain.proceed()
-                        }
-                    }
-
-                    // Absolute Zero: Force size, alpha, and scale to 0
-                    cls.getDeclaredMethod("onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).let { method ->
-                        hook(method).intercept { chain ->
-                            try {
-                                val view = chain.thisObject as View
-                                view.alpha = 0f
-                                view.scaleX = 0f
-                                view.scaleY = 0f
-                                val setMeasuredDimension = View::class.java.getDeclaredMethod("setMeasuredDimension", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                                setMeasuredDimension.isAccessible = true
-                                setMeasuredDimension.invoke(view, 0, 0)
-                            } catch (_: Exception) {}
-                            null
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun hookAutoReward(classLoader: ClassLoader) {
-        try {
-            // AdMob Rewarded Insta-Grant
-            val adMobRewarded = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
-            adMobRewarded.declaredMethods.find { it.name == "show" }?.let { method ->
-                hook(method).intercept { chain ->
-                    Log.d(TAG, "Auto-Reward: Triggering AdMob Reward")
-                    val listener = chain.args.find { it.javaClass.name.contains("OnUserEarnedRewardListener") }
-                    if (listener != null) {
-                        try {
-                            val onUserEarnedReward = listener.javaClass.methods.find { it.name == "onUserEarnedReward" }
-                            onUserEarnedReward?.invoke(listener, null)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to trigger AdMob reward: ${e.message}")
-                        }
-                    }
-                    null 
-                }
-            }
-
-            // AppLovin MAX Rewarded Insta-Grant
-            val maxRewarded = classLoader.loadClass("com.applovin.mediation.ads.MaxRewardedAd")
-            maxRewarded.declaredMethods.find { it.name == "showAd" }?.let { method ->
-                hook(method).intercept { chain ->
-                    Log.d(TAG, "Auto-Reward: Triggering AppLovin Reward")
-                    try {
-                        val listenerField = chain.thisObject.javaClass.declaredFields.find { it.type.name.contains("MaxAdRewardedListener") || it.name == "listener" }
-                        listenerField?.isAccessible = true
-                        val listener = listenerField?.get(chain.thisObject)
-                        if (listener != null) {
-                            val onAdRewarded = listener.javaClass.methods.find { it.name == "onAdRewarded" }
-                            onAdRewarded?.invoke(listener, null, null)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to trigger AppLovin reward: ${e.message}")
-                    }
-                    null
-                }
+                chain.proceed()
             }
         } catch (_: Exception) {}
     }
 
     private fun isAdDomain(host: String): Boolean {
-        val hostLower = host.lowercase()
-        
-        // Whitelist attribution & essential content domains
-        if (hostLower.contains("googleusercontent.com") || 
-            hostLower.contains("play.google.com") || 
-            hostLower.contains("play.googleapis.com") ||
-            hostLower.contains("dl.google.com") ||
-            hostLower.contains("googleapis.com") ||
-            hostLower.contains("gstatic.com") ||
-            hostLower.contains("android.com") ||
-            hostLower.contains("adjust.com") ||
-            hostLower.contains("appsflyer.com") ||
-            hostLower.contains("gvt1.com") || // Google Video/Asset Delivery
-            hostLower.contains("ggpht.com") ||
-            hostLower.contains("google.com") || // Broader whitelist for safety
-            hostLower.contains("unity3d.com")) {
-            return false
-        }
-        
-        return dynamicDomains.any { host.contains(it, ignoreCase = true) } ||
-               host.contains("rayjump.com", ignoreCase = true) ||
-               host.contains("mintegral.net", ignoreCase = true) ||
-               host.contains("maxesads.com", ignoreCase = true) ||
-               host.contains("sonicsads.com", ignoreCase = true) ||
-               host.contains("news-cdn.site", ignoreCase = true)
+        return dynamicDomains.any { host.contains(it, ignoreCase = true) }
     }
 
     private fun isAdIntent(intent: Intent): Boolean {
         val data = try { intent.dataString?.lowercase() ?: "" } catch (_: Exception) { "" }
-        val component = intent.component?.className?.lowercase() ?: ""
+        val component = intent.component
+        val componentName = component?.className ?: ""
+        val componentPkg = component?.packageName ?: ""
         
-        // Safety: Never block play store intents required for ownership check
         if (data.contains("play.google.com/store/apps/details?id=") && 
             intent.component?.packageName == "com.android.vending") {
             return false
         }
 
-        val blocked = data.contains("googleads") || 
-               data.contains("doubleclick") ||
-               data.contains("adservice") ||
-               data.contains("pagead") ||
-               data.contains("googleadservices") ||
-               data.contains("/ads/") ||
-               data.contains(".ads") ||
-               component.contains("adactivity") ||
-               component.contains("adunitactivity") ||
-               component.contains("applovin") ||
-               component.contains("vungle") ||
-               component.contains("ironsource")
+        val blocked = AdBlockUtils.isAdClass(componentName, dynamicPackages) ||
+                      AdBlockUtils.isAdClass(componentPkg, dynamicPackages)
 
         if (blocked) {
-            Log.i(TAG, "Intent blocking: data=$data, component=$component")
+            Log.i(TAG, "Intent blocking: data=$data, component=$componentName")
         }
 
         return blocked
