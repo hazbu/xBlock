@@ -22,7 +22,6 @@ import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
 import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
 import java.io.ByteArrayInputStream
-import java.lang.reflect.Field
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketAddress
@@ -30,6 +29,7 @@ import java.net.SocketAddress
 class MainHook : XposedModule() {
 
     private val modulePackage = "com.hazbu.xblock"
+    private val TAG = "xBlock"
     private var dynamicDomains = mutableSetOf<String>()
 
     private val adPackages = listOf(
@@ -66,7 +66,8 @@ class MainHook : XposedModule() {
         "com.google.android.webview",
         "com.google.android.syncadapters.contacts",
         "com.google.android.finsky",
-        "com.google.android.play.games"
+        "com.google.android.play.games",
+        "com.google.android.play.core"
     )
 
     private val voidKillMethods = listOf(
@@ -76,15 +77,17 @@ class MainHook : XposedModule() {
     override fun onPackageReady(param: PackageReadyParam) {
         super.onPackageReady(param)
         
+        Log.d(TAG, "onPackageReady: ${param.packageName}")
+
         if (param.packageName == modulePackage) return
         
         // Safety: Never hook critical system processes
         if (systemSkipList.contains(param.packageName)) {
-            Log.d("xBlock", "Skipping critical system package: ${param.packageName}")
+            Log.d(TAG, "Skipping critical system package: ${param.packageName}")
             return
         }
 
-        Log.d("xBlock", "Hooking ${param.packageName} via libxposed")
+        Log.d(TAG, "Hooking ${param.packageName} via libxposed")
 
         val classLoader = param.classLoader
         hookApplication(classLoader)
@@ -97,8 +100,8 @@ class MainHook : XposedModule() {
         hookWebView(classLoader)
         hookGameAds(classLoader)
         hookIntents(classLoader)
+        hookService(classLoader)
         hookSensors(classLoader)
-        hookStealth(classLoader)
         hookStealthVPN(classLoader)
         hookAdMobIdentity(classLoader)
         hookNuclear(classLoader)
@@ -109,7 +112,7 @@ class MainHook : XposedModule() {
 
     @Suppress("UNCHECKED_CAST")
     override fun onHotReloading(param: HotReloadingParam): Boolean {
-        Log.d("xBlock", "Hot reloading: Saving domain state...")
+        Log.d(TAG, "Hot reloading: Saving domain state...")
         val state = Bundle().apply {
             putStringArrayList("domains", ArrayList(dynamicDomains))
         }
@@ -119,14 +122,14 @@ class MainHook : XposedModule() {
 
     override fun onHotReloaded(param: HotReloadedParam) {
         super.onHotReloaded(param)
-        Log.d("xBlock", "Hot reloaded: Restoring state...")
+        Log.d(TAG, "Hot reloaded: Restoring state...")
         val savedInstanceState = param.savedInstanceState
         if (savedInstanceState is Bundle) {
             val savedDomains = savedInstanceState.getStringArrayList("domains")
             if (savedDomains != null) {
                 dynamicDomains.clear()
                 dynamicDomains.addAll(savedDomains)
-                Log.d("xBlock", "Restored ${dynamicDomains.size} domains after reload")
+                Log.d(TAG, "Restored ${dynamicDomains.size} domains after reload")
             }
         }
     }
@@ -147,7 +150,7 @@ class MainHook : XposedModule() {
                 result
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "Application Hook Error: ${e.message}")
+            Log.e(TAG, "Application Hook Error: ${e.message}")
         }
     }
 
@@ -166,14 +169,14 @@ class MainHook : XposedModule() {
                 
                 dynamicDomains.clear()
                 dynamicDomains.addAll(tempSet)
-                Log.d("xBlock", "Successfully fetched ${dynamicDomains.size} domains")
+                Log.d(TAG, "Successfully fetched ${dynamicDomains.size} domains")
 
                 if (dynamicDomains.isNotEmpty()) {
                     showToast(context, "xBlock Active")
                 }
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "Failed to fetch domains: ${e.message}")
+            Log.e(TAG, "Failed to fetch domains: ${e.message}")
         }
     }
 
@@ -195,7 +198,7 @@ class MainHook : XposedModule() {
             hook(getByNameMethod).intercept { chain ->
                 val host = chain.args[0] as? String
                 if ((host != null) && isAdDomain(host)) {
-                    Log.d("xBlock", "DNS blocking: $host")
+                    Log.d(TAG, "DNS blocking: $host")
                     sinkholeAddress
                 } else {
                     chain.proceed()
@@ -205,14 +208,14 @@ class MainHook : XposedModule() {
             hook(getAllByNameMethod).intercept { chain ->
                 val host = chain.args[0] as? String
                 if ((host != null) && isAdDomain(host)) {
-                    Log.d("xBlock", "DNS (all) blocking: $host")
+                    Log.d(TAG, "DNS (all) blocking: $host")
                     arrayOf(sinkholeAddress)
                 } else {
                     chain.proceed()
                 }
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "DNS Hook Error: ${e.message}")
+            Log.e(TAG, "DNS Hook Error: ${e.message}")
         }
     }
 
@@ -229,7 +232,7 @@ class MainHook : XposedModule() {
                 hook(method).intercept { chain ->
                     val domain = chain.args.find { it is String } as? String
                     if (domain != null && isAdDomain(domain)) {
-                        Log.d("xBlock", "Deep DNS blocking: $domain")
+                        Log.d(TAG, "Deep DNS blocking: $domain")
                         val callback = chain.args.find { callbackClass.isInstance(it) }
                         if (callback != null) {
                             val error = dnsExceptionConstructor.newInstance(1, null) // ERROR_NAME_NOT_FOUND = 1
@@ -243,7 +246,7 @@ class MainHook : XposedModule() {
                 }
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "Deep DNS Hook Error: ${e.message}")
+            Log.e(TAG, "Deep DNS Hook Error: ${e.message}")
         }
     }
 
@@ -257,14 +260,14 @@ class MainHook : XposedModule() {
                 if (address != null) {
                     val host = address.hostString 
                     if (isAdDomain(host)) {
-                        Log.d("xBlock", "Socket blocking (Silent): $host")
+                        Log.d(TAG, "Socket blocking (Silent): $host")
                         return@intercept null 
                     }
                 }
                 chain.proceed()
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "Socket Hook Error: ${e.message}")
+            Log.e(TAG, "Socket Hook Error: ${e.message}")
         }
     }
 
@@ -276,7 +279,7 @@ class MainHook : XposedModule() {
             val systemDns = dnsInterface.getDeclaredField("SYSTEM")[null]
 
             hook(dnsMethod).intercept { chain ->
-                Log.d("xBlock", "OkHttp DNS: Forcing system DNS")
+                Log.d(TAG, "OkHttp DNS: Forcing system DNS")
                 chain.args[0] = systemDns
                 chain.proceed()
             }
@@ -288,7 +291,7 @@ class MainHook : XposedModule() {
             val builderClass = classLoader.loadClass("org.chromium.net.CronetEngine" + "$" + "Builder")
             builderClass.declaredMethods.find { it.name == "setUseBuiltInDnsResolver" }?.let { method ->
                 hook(method).intercept { chain ->
-                    Log.d("xBlock", "Cronet DNS: Disabling built-in resolver")
+                    Log.d(TAG, "Cronet DNS: Disabling built-in resolver")
                     chain.args[0] = false
                     chain.proceed()
                 }
@@ -304,7 +307,7 @@ class MainHook : XposedModule() {
             hook(addViewMethod).intercept { chain ->
                 val view = chain.args[0] as? View
                 if (view != null && AdBlockUtils.isAdView(view.javaClass.name)) {
-                    Log.d("xBlock", "UI blocking: Hiding ${view.javaClass.name}")
+                    Log.d(TAG, "UI blocking: Hiding ${view.javaClass.name}")
                     recursiveHide(view)
                 }
                 chain.proceed()
@@ -337,7 +340,7 @@ class MainHook : XposedModule() {
             }
 
         } catch (e: Exception) {
-            Log.e("xBlock", "UI Hook Error: ${e.message}")
+            Log.e(TAG, "UI Hook Error: ${e.message}")
         }
     }
 
@@ -391,7 +394,7 @@ class MainHook : XposedModule() {
                     val request = chain.args[1] as? WebResourceRequest
                     val host = request?.url?.host
                     if ((host != null) && isAdDomain(host)) {
-                        Log.d("xBlock", "WebView blocking $host")
+                        Log.d(TAG, "WebView blocking $host")
                         WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream("".toByteArray()))
                     } else {
                         chain.proceed()
@@ -408,7 +411,7 @@ class MainHook : XposedModule() {
                     val urlString = chain.args[1] as? String
                     val host = urlString?.toUri()?.host
                     if ((host != null) && isAdDomain(host)) {
-                        Log.d("xBlock", "WebView (legacy) blocking $host")
+                        Log.d(TAG, "WebView (legacy) blocking $host")
                         WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream("".toByteArray()))
                     } else {
                         chain.proceed()
@@ -417,7 +420,7 @@ class MainHook : XposedModule() {
             } catch (_: NoSuchMethodException) {}
 
         } catch (e: Exception) {
-            Log.e("xBlock", "WebView Hook Error: ${e.message}")
+            Log.e(TAG, "WebView Hook Error: ${e.message}")
         }
     }
 
@@ -432,7 +435,7 @@ class MainHook : XposedModule() {
                             for (method in cls.declaredMethods) {
                                 if (voidKillMethods.contains(method.name) && method.returnType == Void.TYPE) {
                                     hook(method).intercept {
-                                        Log.d("xBlock", "Void-killed: ${cls.name}.${method.name}")
+                                        Log.d(TAG, "Void-killed: ${cls.name}.${method.name}")
                                         null
                                     }
                                 }
@@ -447,7 +450,7 @@ class MainHook : XposedModule() {
                 val interstitialAdClass = classLoader.loadClass("com.google.android.gms.ads.interstitial.InterstitialAd")
                 interstitialAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
                     hook(method).intercept {
-                        Log.d("xBlock", "AdMob: Blocked Interstitial load()")
+                        Log.d(TAG, "AdMob: Blocked Interstitial load()")
                         null 
                     }
                 }
@@ -455,7 +458,7 @@ class MainHook : XposedModule() {
                 val rewardedAdClass = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
                 rewardedAdClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
                     hook(method).intercept {
-                        Log.d("xBlock", "AdMob: Blocked Rewarded load()")
+                        Log.d(TAG, "AdMob: Blocked Rewarded load()")
                         null
                     }
                 }
@@ -463,7 +466,7 @@ class MainHook : XposedModule() {
                 val adManagerInterClass = classLoader.loadClass("com.google.android.gms.ads.admanager.AdManagerInterstitialAd")
                 adManagerInterClass.declaredMethods.filter { it.name == "load" }.forEach { method ->
                     hook(method).intercept {
-                        Log.d("xBlock", "AdManager: Blocked Interstitial load()")
+                        Log.d(TAG, "AdManager: Blocked Interstitial load()")
                         null
                     }
                 }
@@ -474,7 +477,7 @@ class MainHook : XposedModule() {
                 bridgeClass.declaredMethods.forEach { method ->
                     if (method.name.startsWith("load") || method.name.startsWith("show")) {
                         hook(method).intercept {
-                            Log.d("xBlock", "AppLovin Bridge Blocked: ${method.name}()")
+                            Log.d(TAG, "AppLovin Bridge Blocked: ${method.name}()")
                             null
                         }
                     }
@@ -482,7 +485,7 @@ class MainHook : XposedModule() {
             } catch (_: Exception) {}
 
         } catch (e: Exception) {
-            Log.e("xBlock", "GameAds Hook Error: ${e.message}")
+            Log.e(TAG, "GameAds Hook Error: ${e.message}")
         }
     }
 
@@ -495,7 +498,7 @@ class MainHook : XposedModule() {
             hook(startActivityMethod).intercept { chain ->
                 val intent = chain.args[0] as? Intent
                 if (intent != null && isAdIntent(intent)) {
-                    Log.d("xBlock", "Intent blocking: Redirect prevented")
+                    Log.d(TAG, "Intent blocking: Redirect prevented")
                     null 
                 } else {
                     chain.proceed()
@@ -509,7 +512,7 @@ class MainHook : XposedModule() {
                     hook(execStartMethod).intercept { chain ->
                         val intent = chain.args.find { it is Intent } as? Intent
                         if (intent != null && isAdIntent(intent)) {
-                            Log.d("xBlock", "Instrumentation blocking: Ad Activity prevented")
+                            Log.d(TAG, "Instrumentation blocking: Ad Activity prevented")
                             null
                         } else {
                             chain.proceed()
@@ -519,7 +522,28 @@ class MainHook : XposedModule() {
             } catch (_: Exception) {}
 
         } catch (e: Exception) {
-            Log.e("xBlock", "Intent Hook Error: ${e.message}")
+            Log.e(TAG, "Intent Hook Error: ${e.message}")
+        }
+    }
+
+    @Suppress("PrivateApi")
+    private fun hookService(classLoader: ClassLoader) {
+        try {
+            val contextImplClass = classLoader.loadClass("android.app.ContextImpl")
+            val bindServiceMethods = contextImplClass.declaredMethods.filter { it.name == "bindService" }
+            
+            for (method in bindServiceMethods) {
+                hook(method).intercept { chain ->
+                    val intent = chain.args.find { it is Intent } as? Intent
+                    if (intent != null && isAdIntent(intent)) {
+                        Log.d(TAG, "Blocking ad service: action=${intent.action}, pkg=${intent.`package`}")
+                        return@intercept false 
+                    }
+                    chain.proceed()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Service Hook Error: ${e.message}")
         }
     }
 
@@ -537,26 +561,8 @@ class MainHook : XposedModule() {
                 chain.proceed()
             }
         } catch (e: Exception) {
-            Log.e("xBlock", "Sensor Hook Error: ${e.message}")
+            Log.e(TAG, "Sensor Hook Error: ${e.message}")
         }
-    }
-
-    private fun hookStealth(classLoader: ClassLoader) {
-        try {
-            val fieldClass = classLoader.loadClass("java.lang.reflect.Field")
-            val getMethod = fieldClass.getDeclaredMethod("get", Any::class.java)
-            
-            hook(getMethod).intercept { chain ->
-                val field = chain.thisObject as? Field
-                if (field != null) {
-                    val name = field.name
-                    if (name == "disableHooks" || name == "sHookedMethodCallbacks") {
-                        throw NoSuchFieldException(name)
-                    }
-                }
-                chain.proceed()
-            }
-        } catch (_: Exception) {}
     }
 
     private fun hookStealthVPN(classLoader: ClassLoader) {
@@ -603,7 +609,7 @@ class MainHook : XposedModule() {
                 cls.getDeclaredMethod("onCreate", Bundle::class.java).let { method ->
                     hook(method).intercept { chain ->
                         val activity = chain.thisObject as Activity
-                        Log.d("xBlock", "Nuclear: Killing ad activity ${activity.javaClass.name}")
+                        Log.d(TAG, "Nuclear: Killing ad activity ${activity.javaClass.name}")
                         activity.finish()
                         null
                     }
@@ -616,7 +622,7 @@ class MainHook : XposedModule() {
             val parcelClass = classLoader.loadClass("com.google.android.gms.ads.internal.overlay.AdOverlayInfoParcel")
             parcelClass.declaredConstructors.forEach { constructor ->
                 hook(constructor).intercept { chain ->
-                    Log.d("xBlock", "Nuclear: Nullifying AdOverlayInfoParcel")
+                    Log.d(TAG, "Nuclear: Nullifying AdOverlayInfoParcel")
                     chain.proceed()
                 }
             }
@@ -639,7 +645,7 @@ class MainHook : XposedModule() {
                     val cls = classLoader.loadClass(clsName)
                     cls.declaredMethods.find { it.name == methodName }?.let { method ->
                         hook(method).intercept {
-                            Log.d("xBlock", "Economic: Blocked $methodName for $clsName")
+                            Log.d(TAG, "Economic: Blocked $methodName for $clsName")
                             null 
                         }
                     }
@@ -704,14 +710,14 @@ class MainHook : XposedModule() {
             val adMobRewarded = classLoader.loadClass("com.google.android.gms.ads.rewarded.RewardedAd")
             adMobRewarded.declaredMethods.find { it.name == "show" }?.let { method ->
                 hook(method).intercept { chain ->
-                    Log.d("xBlock", "Auto-Reward: Triggering AdMob Reward")
+                    Log.d(TAG, "Auto-Reward: Triggering AdMob Reward")
                     val listener = chain.args.find { it.javaClass.name.contains("OnUserEarnedRewardListener") }
                     if (listener != null) {
                         try {
                             val onUserEarnedReward = listener.javaClass.methods.find { it.name == "onUserEarnedReward" }
                             onUserEarnedReward?.invoke(listener, null)
                         } catch (e: Exception) {
-                            Log.e("xBlock", "Failed to trigger AdMob reward: ${e.message}")
+                            Log.e(TAG, "Failed to trigger AdMob reward: ${e.message}")
                         }
                     }
                     null 
@@ -722,7 +728,7 @@ class MainHook : XposedModule() {
             val maxRewarded = classLoader.loadClass("com.applovin.mediation.ads.MaxRewardedAd")
             maxRewarded.declaredMethods.find { it.name == "showAd" }?.let { method ->
                 hook(method).intercept { chain ->
-                    Log.d("xBlock", "Auto-Reward: Triggering AppLovin Reward")
+                    Log.d(TAG, "Auto-Reward: Triggering AppLovin Reward")
                     try {
                         val listenerField = chain.thisObject.javaClass.declaredFields.find { it.type.name.contains("MaxAdRewardedListener") || it.name == "listener" }
                         listenerField?.isAccessible = true
@@ -732,7 +738,7 @@ class MainHook : XposedModule() {
                             onAdRewarded?.invoke(listener, null, null)
                         }
                     } catch (e: Exception) {
-                        Log.e("xBlock", "Failed to trigger AppLovin reward: ${e.message}")
+                        Log.e(TAG, "Failed to trigger AppLovin reward: ${e.message}")
                     }
                     null
                 }
@@ -752,7 +758,11 @@ class MainHook : XposedModule() {
             hostLower.contains("gstatic.com") ||
             hostLower.contains("android.com") ||
             hostLower.contains("adjust.com") ||
-            hostLower.contains("appsflyer.com")) {
+            hostLower.contains("appsflyer.com") ||
+            hostLower.contains("gvt1.com") || // Google Video/Asset Delivery
+            hostLower.contains("ggpht.com") ||
+            hostLower.contains("google.com") || // Broader whitelist for safety
+            hostLower.contains("unity3d.com")) {
             return false
         }
         
@@ -774,16 +784,23 @@ class MainHook : XposedModule() {
             return false
         }
 
-        return data.contains("googleads") || 
+        val blocked = data.contains("googleads") || 
                data.contains("doubleclick") ||
                data.contains("adservice") ||
                data.contains("pagead") ||
                data.contains("googleadservices") ||
-               data.contains("ads") ||
+               data.contains("/ads/") ||
+               data.contains(".ads") ||
                component.contains("adactivity") ||
                component.contains("adunitactivity") ||
                component.contains("applovin") ||
                component.contains("vungle") ||
                component.contains("ironsource")
+
+        if (blocked) {
+            Log.i(TAG, "Intent blocking: data=$data, component=$component")
+        }
+
+        return blocked
     }
 }
