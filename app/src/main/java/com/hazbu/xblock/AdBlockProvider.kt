@@ -1,5 +1,4 @@
 package com.hazbu.xblock
-
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
@@ -11,11 +10,8 @@ import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_ADGUARD
 import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_EXODUS
 import com.hazbu.xblock.Constants.KEY_PACKAGES
 import com.hazbu.xblock.Constants.PREFS_NAME
-
 class AdBlockProvider : ContentProvider() {
-
     override fun onCreate(): Boolean = true
-
     override fun query(
         uri: Uri,
         projection: Array<out String>?,
@@ -25,7 +21,6 @@ class AdBlockProvider : ContentProvider() {
     ): Cursor? {
         val context = context ?: return null
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
         return when (uri.path) {
             "/domains" -> {
                 val domains = prefs.getStringSet(KEY_DOMAINS, emptySet()) ?: emptySet()
@@ -49,17 +44,16 @@ class AdBlockProvider : ContentProvider() {
                 val count = domains.size + packages.size
                 val isDownloading = prefs.getBoolean(KEY_IS_DOWNLOADING_ADGUARD, false) ||
                                     prefs.getBoolean(KEY_IS_DOWNLOADING_EXODUS, false)
-
                 val cursor = MatrixCursor(arrayOf("count", "is_downloading", "just_updated"))
-                cursor.addRow(arrayOf(count, if (isDownloading) 1 else 0, 0)) // just_updated always 0
+                cursor.addRow(arrayOf(count, if (isDownloading) 1 else 0, 0))
                 cursor
             }
             else -> null
         }
     }
-
     override fun getType(uri: Uri): String? = null
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
 }
+

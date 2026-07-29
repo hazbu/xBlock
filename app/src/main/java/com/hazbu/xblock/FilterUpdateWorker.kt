@@ -1,5 +1,4 @@
 package com.hazbu.xblock
-
 import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
@@ -14,34 +13,26 @@ import com.hazbu.xblock.Constants.KEY_PACKAGES
 import com.hazbu.xblock.Constants.PREFS_NAME
 import okhttp3.OkHttpClient
 import okhttp3.Request
-
 class FilterUpdateWorker(
     appContext: Context,
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
-
     private val client = OkHttpClient()
     private val tagX = "xBlock"
-
     companion object {
         const val KEY_TYPE = "update_type"
         const val TYPE_ADGUARD = "adguard"
         const val TYPE_EXODUS = "exodus"
         const val KEY_JUST_UPDATED = "just_updated"
     }
-
     override suspend fun doWork(): Result {
         val type = inputData.getString(KEY_TYPE) ?: TYPE_ADGUARD
         Log.d(tagX, "FilterUpdateWorker: Starting $type update...")
-
         val downloadKey = if (type == TYPE_EXODUS) KEY_IS_DOWNLOADING_EXODUS else KEY_IS_DOWNLOADING_ADGUARD
-
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit { putBoolean(downloadKey, true) }
-
         val url = if (type == TYPE_EXODUS) AdBlockUtils.EXODUS_URL else AdBlockUtils.FILTER_URL
         val request = Request.Builder().url(url).build()
-
         return try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
@@ -49,7 +40,6 @@ class FilterUpdateWorker(
                 prefs.edit { putBoolean(downloadKey, false) }
                 return Result.retry()
             }
-
             val body = response.body
             if (body != null) {
                 body.charStream().use { reader ->
@@ -63,7 +53,6 @@ class FilterUpdateWorker(
                         Log.d(tagX, "FilterUpdateWorker: Successfully updated ${domains.size} domains")
                     }
                 }
-
                 prefs.edit {
                     putBoolean(downloadKey, false)
                     putBoolean(KEY_JUST_UPDATED, true)
@@ -80,7 +69,6 @@ class FilterUpdateWorker(
             Result.retry()
         }
     }
-
     private fun saveFilter(filterKey: String, timeKey: String, data: Set<String>) {
         val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit {
@@ -90,3 +78,4 @@ class FilterUpdateWorker(
         AdBlockUtils.fixPermissions(applicationContext)
     }
 }
+

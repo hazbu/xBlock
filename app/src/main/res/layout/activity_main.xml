@@ -4,7 +4,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/colorSurface">
-
     <LinearLayout
         android:id="@+id/main"
         android:layout_width="match_parent"
@@ -12,7 +11,6 @@
         android:orientation="vertical"
         android:padding="24dp"
         android:gravity="center_horizontal">
-
         <TextView
             android:id="@+id/title"
             android:layout_width="wrap_content"
@@ -23,7 +21,6 @@
             android:textAppearance="?attr/textAppearanceHeadlineLarge"
             android:textStyle="bold"
             android:textColor="?attr/colorOnSurface" />
-
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -32,13 +29,11 @@
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorOutlineVariant">
-
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="20dp">
-
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -46,7 +41,6 @@
                     android:textAppearance="?attr/textAppearanceTitleMedium"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary"/>
-
                 <TextView
                     android:id="@+id/adguard_status"
                     android:layout_width="wrap_content"
@@ -55,13 +49,11 @@
                     android:text="Status: Loading..."
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant"/>
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:layout_marginTop="16dp">
-
                     <Button
                         android:id="@+id/btn_update_adguard"
                         android:layout_width="0dp"
@@ -70,7 +62,6 @@
                         android:text="Update"
                         android:layout_marginEnd="8dp"
                         style="@style/Widget.Material3.Button"/>
-
                     <Button
                         android:id="@+id/btn_delete_adguard"
                         android:layout_width="0dp"
@@ -82,7 +73,6 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -90,13 +80,11 @@
             app:cardElevation="0dp"
             app:strokeWidth="1dp"
             app:strokeColor="?attr/colorOutlineVariant">
-
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="20dp">
-
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -104,7 +92,6 @@
                     android:textAppearance="?attr/textAppearanceTitleMedium"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary"/>
-
                 <TextView
                     android:id="@+id/exodus_status"
                     android:layout_width="wrap_content"
@@ -113,13 +100,11 @@
                     android:text="Status: Loading..."
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant"/>
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:layout_marginTop="16dp">
-
                     <Button
                         android:id="@+id/btn_update_exodus"
                         android:layout_width="0dp"
@@ -128,7 +113,6 @@
                         android:text="Update"
                         android:layout_marginEnd="8dp"
                         style="@style/Widget.Material3.Button"/>
-
                     <Button
                         android:id="@+id/btn_delete_exodus"
                         android:layout_width="0dp"
@@ -140,6 +124,6 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+
