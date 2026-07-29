@@ -1,17 +1,27 @@
 package com.hazbu.xblock
 
-import android.content.Context
 import android.os.Bundle
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import androidx.work.*
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import com.google.android.material.color.DynamicColors
+import com.google.android.material.color.MaterialColors
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -23,9 +33,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnDeleteExodus: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        DynamicColors.applyToActivityIfAvailable(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        val titleView = findViewById<TextView>(R.id.title)
+        val spannable = SpannableString("xBlock")
+        val primaryColor = MaterialColors.getColor(titleView, androidx.appcompat.R.attr.colorPrimary)
+        spannable.setSpan(
+            ForegroundColorSpan(primaryColor),
+            0, 1,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        titleView.text = spannable
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -59,10 +80,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun deleteFilter(vararg keys: String) {
-        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().apply {
+        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_PRIVATE)
+        prefs.edit {
             keys.forEach { remove(it) }
-        }.apply()
+        }
         AdBlockUtils.fixPermissions(this)
         refreshUI()
     }
@@ -96,7 +117,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshUI() {
-        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(AdBlockUtils.PREFS_NAME, MODE_PRIVATE)
         val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
         
         // AdGuard

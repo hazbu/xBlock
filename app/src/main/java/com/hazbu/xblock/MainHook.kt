@@ -25,17 +25,20 @@ import java.net.SocketAddress
 
 class MainHook : XposedModule() {
 
-    private val modulePackage = "com.hazbu.xblock"
-    private val TAG = "xBlock"
     private var dynamicDomains = mutableSetOf<String>()
     private var dynamicPackages = mutableSetOf<String>()
+
+    companion object {
+        private const val MODULE_PACKAGE = "com.hazbu.xblock"
+        private const val TAG = "xBlock"
+    }
 
     override fun onPackageReady(param: PackageReadyParam) {
         super.onPackageReady(param)
         
         Log.d(TAG, "onPackageReady: ${param.packageName}")
 
-        if (param.packageName == modulePackage) return
+        if (param.packageName == MODULE_PACKAGE) return
         
         Log.d(TAG, "Hooking ${param.packageName} via libxposed")
 
@@ -92,8 +95,8 @@ class MainHook : XposedModule() {
 
                 result
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Application Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Hook Error")
         }
     }
 
@@ -144,8 +147,8 @@ class MainHook : XposedModule() {
                 dynamicPackages.addAll(tempSet)
                 Log.d(TAG, "Successfully fetched ${dynamicPackages.size} packages from Exodus")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch data from provider: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to fetch data from provider")
         }
     }
 
@@ -183,8 +186,8 @@ class MainHook : XposedModule() {
                     chain.proceed()
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "DNS Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "DNS Hook Error")
         }
     }
 
@@ -214,8 +217,8 @@ class MainHook : XposedModule() {
                     }
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Deep DNS Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Deep DNS Hook Error")
         }
     }
 
@@ -235,8 +238,8 @@ class MainHook : XposedModule() {
                 }
                 chain.proceed()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Socket Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Socket Hook Error")
         }
     }
 
@@ -293,8 +296,8 @@ class MainHook : XposedModule() {
                 }
             } catch (_: Exception) {}
 
-        } catch (e: Exception) {
-            Log.e(TAG, "UI Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "UI Hook Error")
         }
     }
 
@@ -373,8 +376,8 @@ class MainHook : XposedModule() {
                 }
             } catch (_: NoSuchMethodException) {}
 
-        } catch (e: Exception) {
-            Log.e(TAG, "WebView Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "WebView Hook Error")
         }
     }
 
@@ -410,8 +413,8 @@ class MainHook : XposedModule() {
                 }
             } catch (_: Exception) {}
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Intent Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Intent Hook Error")
         }
     }
 
@@ -431,8 +434,8 @@ class MainHook : XposedModule() {
                     chain.proceed()
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Service Hook Error: ${e.message}")
+        } catch (_: Exception) {
+            Log.e(TAG, "Service Hook Error")
         }
     }
 

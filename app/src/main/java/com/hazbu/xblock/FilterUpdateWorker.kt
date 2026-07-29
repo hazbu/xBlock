@@ -47,11 +47,11 @@ class FilterUpdateWorker(
                 body.charStream().use { reader ->
                     if (type == TYPE_EXODUS) {
                         val packages = AdBlockUtils.parseExodusFilter(reader)
-                        savePackages(packages)
+                        saveFilter(AdBlockUtils.KEY_PACKAGES, AdBlockUtils.KEY_LAST_UPDATE_EXODUS, packages)
                         Log.d(TAG, "FilterUpdateWorker: Successfully updated ${packages.size} packages")
                     } else {
                         val domains = AdBlockUtils.parseAdGuardFilter(reader)
-                        saveDomains(domains)
+                        saveFilter(AdBlockUtils.KEY_DOMAINS, AdBlockUtils.KEY_LAST_UPDATE_ADGUARD, domains)
                         Log.d(TAG, "FilterUpdateWorker: Successfully updated ${domains.size} domains")
                     }
                 }
@@ -73,20 +73,11 @@ class FilterUpdateWorker(
         }
     }
 
-    private fun saveDomains(domains: Set<String>) {
+    private fun saveFilter(filterKey: String, timeKey: String, data: Set<String>) {
         val prefs = applicationContext.getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit {
-            putStringSet(AdBlockUtils.KEY_DOMAINS, domains)
-            putLong(AdBlockUtils.KEY_LAST_UPDATE_ADGUARD, System.currentTimeMillis())
-        }
-        AdBlockUtils.fixPermissions(applicationContext)
-    }
-
-    private fun savePackages(packages: Set<String>) {
-        val prefs = applicationContext.getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit {
-            putStringSet(AdBlockUtils.KEY_PACKAGES, packages)
-            putLong(AdBlockUtils.KEY_LAST_UPDATE_EXODUS, System.currentTimeMillis())
+            putStringSet(filterKey, data)
+            putLong(timeKey, System.currentTimeMillis())
         }
         AdBlockUtils.fixPermissions(applicationContext)
     }
