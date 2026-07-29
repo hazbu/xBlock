@@ -1,21 +1,13 @@
 package com.hazbu.xblock
 
 import android.content.Context
+import com.hazbu.xblock.Constants.PREFS_NAME
 import org.json.JSONObject
 import java.io.File
 
 object AdBlockUtils {
     const val FILTER_URL = "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
     const val EXODUS_URL = "https://reports.exodus-privacy.eu.org/api/trackers"
-    
-    const val PREFS_NAME = "ad_prefs"
-    const val KEY_DOMAINS = "domains"
-    const val KEY_PACKAGES = "packages"
-    const val KEY_LAST_UPDATE_ADGUARD = "last_update"
-    const val KEY_LAST_UPDATE_EXODUS = "last_update_exodus"
-    const val KEY_IS_DOWNLOADING_ADGUARD = "is_downloading_adguard"
-    const val KEY_IS_DOWNLOADING_EXODUS = "is_downloading_exodus"
-    const val KEY_JUST_UPDATED = "just_updated"
 
     fun parseAdGuardFilter(reader: java.io.Reader): Set<String> {
         val domains = mutableSetOf<String>()
@@ -40,7 +32,7 @@ object AdBlockUtils {
             val json = reader.readText()
             val root = JSONObject(json)
             val trackers = root.optJSONObject("trackers") ?: return emptySet()
-            
+
             val keys = trackers.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
@@ -68,14 +60,14 @@ object AdBlockUtils {
         try {
             val dataDir = File(context.applicationInfo.dataDir)
             dataDir.setExecutable(true, false)
-            
+
             val prefsDir = File(dataDir, "shared_prefs")
             if (prefsDir.exists()) {
                 prefsDir.setExecutable(true, false)
                 @Suppress("SetWorldReadable")
                 prefsDir.setReadable(true, false)
             }
-            
+
             val prefFile = File(prefsDir, "$PREFS_NAME.xml")
             if (prefFile.exists()) {
                 @Suppress("SetWorldReadable")

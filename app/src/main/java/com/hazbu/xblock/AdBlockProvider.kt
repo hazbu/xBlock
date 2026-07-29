@@ -6,6 +6,11 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import com.hazbu.xblock.Constants.KEY_DOMAINS
+import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_ADGUARD
+import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_EXODUS
+import com.hazbu.xblock.Constants.KEY_PACKAGES
+import com.hazbu.xblock.Constants.PREFS_NAME
 
 class AdBlockProvider : ContentProvider() {
 
@@ -19,11 +24,11 @@ class AdBlockProvider : ContentProvider() {
         sortOrder: String?,
     ): Cursor? {
         val context = context ?: return null
-        val prefs = context.getSharedPreferences(AdBlockUtils.PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         return when (uri.path) {
             "/domains" -> {
-                val domains = prefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
+                val domains = prefs.getStringSet(KEY_DOMAINS, emptySet()) ?: emptySet()
                 val cursor = MatrixCursor(arrayOf("domain"))
                 for (domain in domains) {
                     cursor.addRow(arrayOf(domain))
@@ -31,7 +36,7 @@ class AdBlockProvider : ContentProvider() {
                 cursor
             }
             "/packages" -> {
-                val packages = prefs.getStringSet(AdBlockUtils.KEY_PACKAGES, emptySet()) ?: emptySet()
+                val packages = prefs.getStringSet(KEY_PACKAGES, emptySet()) ?: emptySet()
                 val cursor = MatrixCursor(arrayOf("package"))
                 for (pkg in packages) {
                     cursor.addRow(arrayOf(pkg))
@@ -39,11 +44,11 @@ class AdBlockProvider : ContentProvider() {
                 cursor
             }
             "/status" -> {
-                val domains = prefs.getStringSet(AdBlockUtils.KEY_DOMAINS, emptySet()) ?: emptySet()
-                val packages = prefs.getStringSet(AdBlockUtils.KEY_PACKAGES, emptySet()) ?: emptySet()
+                val domains = prefs.getStringSet(KEY_DOMAINS, emptySet()) ?: emptySet()
+                val packages = prefs.getStringSet(KEY_PACKAGES, emptySet()) ?: emptySet()
                 val count = domains.size + packages.size
-                val isDownloading = prefs.getBoolean(AdBlockUtils.KEY_IS_DOWNLOADING_ADGUARD, false) || 
-                                    prefs.getBoolean(AdBlockUtils.KEY_IS_DOWNLOADING_EXODUS, false)
+                val isDownloading = prefs.getBoolean(KEY_IS_DOWNLOADING_ADGUARD, false) ||
+                                    prefs.getBoolean(KEY_IS_DOWNLOADING_EXODUS, false)
 
                 val cursor = MatrixCursor(arrayOf("count", "is_downloading", "just_updated"))
                 cursor.addRow(arrayOf(count, if (isDownloading) 1 else 0, 0)) // just_updated always 0

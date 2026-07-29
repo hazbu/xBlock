@@ -1,5 +1,7 @@
 package com.hazbu.xblock
 
+import com.hazbu.xblock.Constants.AUTHORITY
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -103,7 +105,7 @@ class MainHook : XposedModule() {
     private fun fetchDomainsFromProvider(context: Context) {
         try {
             // First query status
-            val statusUri = "content://com.hazbu.xblock.provider/status".toUri()
+            val statusUri = "content://${Constants.AUTHORITY}/status".toUri()
             val statusCursor = context.contentResolver.query(statusUri, null, null, null, null)
             var count = 0
 
@@ -118,7 +120,7 @@ class MainHook : XposedModule() {
             showToast(context, "xBlock active : $count filter")
 
             // Then fetch domains
-            val uri = "content://com.hazbu.xblock.provider/domains".toUri()
+            val uri = "content://${Constants.AUTHORITY}/domains".toUri()
             val cursor = context.contentResolver.query(uri, null, null, null, null)
             
             if (cursor != null) {
@@ -135,7 +137,7 @@ class MainHook : XposedModule() {
             }
 
             // Finally fetch packages
-            val pkgUri = "content://com.hazbu.xblock.provider/packages".toUri()
+            val pkgUri = "content://${Constants.AUTHORITY}/packages".toUri()
             val pkgCursor = context.contentResolver.query(pkgUri, null, null, null, null)
             if (pkgCursor != null) {
                 val tempSet = mutableSetOf<String>()
@@ -483,3 +485,4 @@ class MainHook : XposedModule() {
         return blocked
     }
 }
+

@@ -5,4 +5,7 @@
     <string name="last_update">Last update: %s</string>
     <string name="update_button_text">Update Filter List</string>
     <string name="never">Never</string>
+    <string name="status_updating">Status: Updating...</string>
+    <string name="count_label">Count: %d</string>
+    <string name="last_label">Last: %s</string>
 </resources>
