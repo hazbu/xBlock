@@ -4,3 +4,23 @@
 
 # Prevent R8 from removing classes that might be needed by Xposed hooks
 -keep class io.github.libxposed.api.** { *; }
+
+# WorkManager & Startup (Extended Rules)
+-keep class androidx.startup.InitializationProvider
+-keep class androidx.startup.AppInitializer { *; }
+-keep class * implements androidx.startup.Initializer {
+    public <init>();
+}
+
+-keep class androidx.work.impl.** { *; }
+-keep class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
+# Room Database (Robust Fix for Full Mode)
+-keep class * extends androidx.room.RoomDatabase {
+    public <init>();
+}
+-keepnames class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.RoomDatabase
+-dontwarn androidx.work.impl.**

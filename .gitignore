@@ -8,3 +8,6 @@
 .externalNativeBuild
 .cxx
 /.artifacts/
+/app/release/
+*.jks
+*.keystore
