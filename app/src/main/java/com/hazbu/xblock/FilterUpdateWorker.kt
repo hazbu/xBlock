@@ -4,15 +4,20 @@ import android.util.Log
 import androidx.core.content.edit
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.hazbu.xblock.Constants.FILE_DOMAINS
+import com.hazbu.xblock.Constants.FILE_PACKAGES
 import com.hazbu.xblock.Constants.KEY_DOMAINS
+import com.hazbu.xblock.Constants.KEY_DOMAINS_COUNT
 import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_ADGUARD
 import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_EXODUS
 import com.hazbu.xblock.Constants.KEY_LAST_UPDATE_ADGUARD
 import com.hazbu.xblock.Constants.KEY_LAST_UPDATE_EXODUS
 import com.hazbu.xblock.Constants.KEY_PACKAGES
+import com.hazbu.xblock.Constants.KEY_PACKAGES_COUNT
 import com.hazbu.xblock.Constants.PREFS_NAME
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 class FilterUpdateWorker(
     appContext: Context,
     workerParams: WorkerParameters
@@ -45,11 +50,11 @@ class FilterUpdateWorker(
                 body.charStream().use { reader ->
                     if (type == TYPE_EXODUS) {
                         val packages = AdBlockUtils.parseExodusFilter(reader)
-                        saveFilter(KEY_PACKAGES, KEY_LAST_UPDATE_EXODUS, packages)
+                        saveFilterToFile(FILE_PACKAGES, KEY_PACKAGES_COUNT, KEY_LAST_UPDATE_EXODUS, packages)
                         Log.d(tagX, "FilterUpdateWorker: Successfully updated ${packages.size} packages")
                     } else {
                         val domains = AdBlockUtils.parseAdGuardFilter(reader)
-                        saveFilter(KEY_DOMAINS, KEY_LAST_UPDATE_ADGUARD, domains)
+                        saveFilterToFile(FILE_DOMAINS, KEY_DOMAINS_COUNT, KEY_LAST_UPDATE_ADGUARD, domains)
                         Log.d(tagX, "FilterUpdateWorker: Successfully updated ${domains.size} domains")
                     }
                 }
@@ -69,13 +74,30 @@ class FilterUpdateWorker(
             Result.retry()
         }
     }
-    private fun saveFilter(filterKey: String, timeKey: String, data: Set<String>) {
-        val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit {
-            putStringSet(filterKey, data)
-            putLong(timeKey, System.currentTimeMillis())
+    private fun saveFilterToFile(fileName: String, countKey: String, timeKey: String, data: Set<String>) {
+        val context = applicationContext
+        val tmpFile = File(context.filesDir, "$fileName.tmp")
+        val targetFile = File(context.filesDir, fileName)
+        try {
+            tmpFile.bufferedWriter().use { writer ->
+                for (item in data) {
+                    writer.write(item)
+                    writer.newLine()
+                }
+            }
+            if (targetFile.exists()) {
+                targetFile.delete()
+            }
+            tmpFile.renameTo(targetFile)
+        } catch (e: Exception) {
+            Log.e(tagX, "Failed to write filter file $fileName: ${e.message}")
         }
-        AdBlockUtils.fixPermissions(applicationContext)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit {
+            putInt(countKey, data.size)
+            putLong(timeKey, System.currentTimeMillis())
+            remove(if (fileName == FILE_DOMAINS) KEY_DOMAINS else KEY_PACKAGES)
+        }
     }
 }
 

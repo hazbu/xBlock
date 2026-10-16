@@ -13,7 +13,7 @@ object AdBlockUtils {
             if (trimmed.startsWith("||")) {
                 val caretIndex = trimmed.indexOf("^")
                 if (caretIndex != -1) {
-                    val domain = trimmed.substring(2, caretIndex)
+                    val domain = trimmed.substring(2, caretIndex).lowercase().trimEnd('.')
                     if (domain.isNotEmpty() && !domain.contains("/")) {
                         domains.add(domain)
                     }
@@ -35,7 +35,7 @@ object AdBlockUtils {
                 val signature = tracker.optString("code_signature", "")
                 if (signature.isNotEmpty()) {
                     signature.split("|").forEach { pkg ->
-                        val cleaned = pkg.trim().trimEnd('.')
+                        val cleaned = pkg.trim().trimEnd('.').lowercase()
                         if (cleaned.isNotEmpty()) {
                             packages.add(cleaned)
                         }
@@ -45,9 +45,27 @@ object AdBlockUtils {
         } catch (_: Exception) {}
         return packages
     }
-    fun isAdClass(className: String, adPackages: Set<String>): Boolean {
+    fun isAdDomain(host: String?, blockedDomains: Set<String>): Boolean {
+        if (host.isNullOrEmpty() || blockedDomains.isEmpty()) return false
+        var current = host.lowercase().trim().trimEnd('.')
+        val colonIndex = current.indexOf(':')
+        if (colonIndex != -1) {
+            current = current.substring(0, colonIndex)
+        }
+        while (current.isNotEmpty()) {
+            if (blockedDomains.contains(current)) {
+                return true
+            }
+            val nextDot = current.indexOf('.')
+            if (nextDot == -1) break
+            current = current.substring(nextDot + 1)
+        }
+        return false
+    }
+    fun isAdClass(className: String?, adPackages: Set<String>): Boolean {
+        if (className.isNullOrEmpty() || adPackages.isEmpty()) return false
         val lowerName = className.lowercase()
-        return adPackages.any { lowerName.startsWith(it.lowercase()) }
+        return adPackages.any { lowerName.startsWith(it) }
     }
     fun fixPermissions(context: Context) {
         try {

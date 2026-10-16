@@ -16,13 +16,18 @@ import androidx.core.view.updatePadding
 import androidx.work.*
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
+import com.hazbu.xblock.Constants.FILE_DOMAINS
+import com.hazbu.xblock.Constants.FILE_PACKAGES
 import com.hazbu.xblock.Constants.KEY_DOMAINS
+import com.hazbu.xblock.Constants.KEY_DOMAINS_COUNT
 import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_ADGUARD
 import com.hazbu.xblock.Constants.KEY_IS_DOWNLOADING_EXODUS
 import com.hazbu.xblock.Constants.KEY_LAST_UPDATE_ADGUARD
 import com.hazbu.xblock.Constants.KEY_LAST_UPDATE_EXODUS
 import com.hazbu.xblock.Constants.KEY_PACKAGES
+import com.hazbu.xblock.Constants.KEY_PACKAGES_COUNT
 import com.hazbu.xblock.Constants.PREFS_NAME
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 class MainActivity : AppCompatActivity() {
@@ -66,10 +71,10 @@ class MainActivity : AppCompatActivity() {
         btnAdGuard.setOnClickListener { triggerUpdate(FilterUpdateWorker.TYPE_ADGUARD) }
         btnExodus.setOnClickListener { triggerUpdate(FilterUpdateWorker.TYPE_EXODUS) }
         btnDeleteAdGuard.setOnClickListener {
-            deleteFilter(KEY_DOMAINS, KEY_LAST_UPDATE_ADGUARD)
+            deleteFilter(FilterUpdateWorker.TYPE_ADGUARD)
         }
         btnDeleteExodus.setOnClickListener {
-            deleteFilter(KEY_PACKAGES, KEY_LAST_UPDATE_EXODUS)
+            deleteFilter(FilterUpdateWorker.TYPE_EXODUS)
         }
     }
     private fun setupTitleSpannable() {
@@ -87,12 +92,25 @@ class MainActivity : AppCompatActivity() {
         )
         tvTitle.text = spannable
     }
-    private fun deleteFilter(vararg keys: String) {
+    private fun deleteFilter(type: String) {
+        val isAdGuard = (type == FilterUpdateWorker.TYPE_ADGUARD)
+        val fileName = if (isAdGuard) FILE_DOMAINS else FILE_PACKAGES
+        val file = File(filesDir, fileName)
+        if (file.exists()) {
+            file.delete()
+        }
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().apply {
-            keys.forEach { remove(it) }
+            if (isAdGuard) {
+                remove(KEY_DOMAINS)
+                remove(KEY_LAST_UPDATE_ADGUARD)
+                putInt(KEY_DOMAINS_COUNT, 0)
+            } else {
+                remove(KEY_PACKAGES)
+                remove(KEY_LAST_UPDATE_EXODUS)
+                putInt(KEY_PACKAGES_COUNT, 0)
+            }
         }.apply()
-        AdBlockUtils.fixPermissions(this)
         refreshUI()
     }
     private fun triggerUpdate(type: String) {
@@ -125,10 +143,10 @@ class MainActivity : AppCompatActivity() {
             adguardStatus.text = getString(R.string.status_updating)
             btnAdGuard.isEnabled = false
         } else {
-            val domains = prefs.getStringSet(KEY_DOMAINS, emptySet()) ?: emptySet()
+            val domainsCount = prefs.getInt(KEY_DOMAINS_COUNT, prefs.getStringSet(KEY_DOMAINS, emptySet())?.size ?: 0)
             val lastUpdateAdGuard = prefs.getLong(KEY_LAST_UPDATE_ADGUARD, 0L)
             val adguardDateStr = if (lastUpdateAdGuard > 0) sdf.format(Date(lastUpdateAdGuard)) else getString(R.string.never)
-            adguardStatus.text = getString(R.string.count_label, domains.size) + "\n" + getString(R.string.last_label, adguardDateStr)
+            adguardStatus.text = getString(R.string.count_label, domainsCount) + "\n" + getString(R.string.last_label, adguardDateStr)
             btnAdGuard.isEnabled = true
         }
         val isDownloadingExodus = prefs.getBoolean(KEY_IS_DOWNLOADING_EXODUS, false)
@@ -136,10 +154,10 @@ class MainActivity : AppCompatActivity() {
             exodusStatus.text = getString(R.string.status_updating)
             btnExodus.isEnabled = false
         } else {
-            val packages = prefs.getStringSet(KEY_PACKAGES, emptySet()) ?: emptySet()
+            val packagesCount = prefs.getInt(KEY_PACKAGES_COUNT, prefs.getStringSet(KEY_PACKAGES, emptySet())?.size ?: 0)
             val lastUpdateExodus = prefs.getLong(KEY_LAST_UPDATE_EXODUS, 0L)
             val exodusDateStr = if (lastUpdateExodus > 0) sdf.format(Date(lastUpdateExodus)) else getString(R.string.never)
-            exodusStatus.text = getString(R.string.count_label, packages.size) + "\n" + getString(R.string.last_label, exodusDateStr)
+            exodusStatus.text = getString(R.string.count_label, packagesCount) + "\n" + getString(R.string.last_label, exodusDateStr)
             btnExodus.isEnabled = true
         }
     }

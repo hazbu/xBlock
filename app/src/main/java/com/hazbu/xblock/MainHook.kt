@@ -22,9 +22,13 @@ import java.io.ByteArrayInputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.SocketAddress
+import java.util.concurrent.ConcurrentHashMap
 class MainHook : XposedModule() {
-    private var dynamicDomains = mutableSetOf<String>()
-    private var dynamicPackages = mutableSetOf<String>()
+    @Volatile
+    private var dynamicDomains: Set<String> = emptySet()
+    @Volatile
+    private var dynamicPackages: Set<String> = emptySet()
+    private val classCheckCache = ConcurrentHashMap<Class<*>, Boolean>()
     companion object {
         private const val MODULE_PACKAGE = "com.hazbu.xblock"
         private const val TAG = "xBlock"
@@ -47,27 +51,13 @@ class MainHook : XposedModule() {
         hookService(classLoader)
         hookNuclear(classLoader)
     }
-    @Suppress("UNCHECKED_CAST")
     override fun onHotReloading(param: HotReloadingParam): Boolean {
-        Log.d(TAG, "Hot reloading: Saving domain state...")
-        val state = Bundle().apply {
-            putStringArrayList("domains", ArrayList(dynamicDomains))
-        }
-        param.setSavedInstanceState(state)
+        Log.d(TAG, "Hot reloading: Preserving module state...")
         return true 
     }
     override fun onHotReloaded(param: HotReloadedParam) {
         super.onHotReloaded(param)
-        Log.d(TAG, "Hot reloaded: Restoring state...")
-        val savedInstanceState = param.savedInstanceState
-        if (savedInstanceState is Bundle) {
-            val savedDomains = savedInstanceState.getStringArrayList("domains")
-            if (savedDomains != null) {
-                dynamicDomains.clear()
-                dynamicDomains.addAll(savedDomains)
-                Log.d(TAG, "Restored ${dynamicDomains.size} domains after reload")
-            }
-        }
+        Log.d(TAG, "Hot reloaded")
     }
     private fun hookApplication(classLoader: ClassLoader) {
         try {
@@ -97,34 +87,52 @@ class MainHook : XposedModule() {
                 statusCursor.close()
             }
             showToast(context, "xBlock active : $count filter")
-            val uri = "content://${Constants.AUTHORITY}/domains".toUri()
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            if (cursor != null) {
-                val tempSet = mutableSetOf<String>()
-                while (cursor.moveToNext()) {
-                    val domain = cursor.getString(0)
-                    tempSet.add(domain)
-                }
-                cursor.close()
-                dynamicDomains.clear()
-                dynamicDomains.addAll(tempSet)
-                Log.d(TAG, "Successfully fetched ${dynamicDomains.size} domains")
+            val loadedDomains = fetchSetFromProvider(context, "domains")
+            if (loadedDomains.isNotEmpty()) {
+                dynamicDomains = loadedDomains
+                Log.d(TAG, "Successfully fetched ${dynamicDomains.size} domains via streaming")
             }
-            val pkgUri = "content://${Constants.AUTHORITY}/packages".toUri()
-            val pkgCursor = context.contentResolver.query(pkgUri, null, null, null, null)
-            if (pkgCursor != null) {
-                val tempSet = mutableSetOf<String>()
-                while (pkgCursor.moveToNext()) {
-                    tempSet.add(pkgCursor.getString(0))
-                }
-                pkgCursor.close()
-                dynamicPackages.clear()
-                dynamicPackages.addAll(tempSet)
-                Log.d(TAG, "Successfully fetched ${dynamicPackages.size} packages from Exodus")
+            val loadedPackages = fetchSetFromProvider(context, "packages")
+            if (loadedPackages.isNotEmpty()) {
+                dynamicPackages = loadedPackages
+                classCheckCache.clear()
+                Log.d(TAG, "Successfully fetched ${dynamicPackages.size} packages from Exodus via streaming")
             }
         } catch (_: Exception) {
             Log.e(TAG, "Failed to fetch data from provider")
         }
+    }
+    private fun fetchSetFromProvider(context: Context, path: String): Set<String> {
+        val uri = "content://${Constants.AUTHORITY}/$path".toUri()
+        val result = HashSet<String>()
+        try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                stream.bufferedReader().forEachLine { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty()) {
+                        result.add(trimmed.lowercase().trimEnd('.'))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Streaming openInputStream failed for $path: ${e.message}")
+        }
+        if (result.isEmpty()) {
+            try {
+                val cursor = context.contentResolver.query(uri, null, null, null, null)
+                cursor?.use {
+                    while (it.moveToNext()) {
+                        val item = it.getString(0)
+                        if (!item.isNullOrEmpty()) {
+                            result.add(item.trim().lowercase().trimEnd('.'))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Cursor query failed for $path: ${e.message}")
+            }
+        }
+        return result
     }
     @Suppress("UNUSED_PARAMETER", "SameParameterValue")
     private fun showToast(context: Context, msg: String) {
@@ -232,13 +240,20 @@ class MainHook : XposedModule() {
             }
         } catch (_: Exception) {}
     }
+    private fun isAdView(view: View): Boolean {
+        val packages = dynamicPackages
+        if (packages.isEmpty()) return false
+        return classCheckCache.computeIfAbsent(view.javaClass) { clazz ->
+            AdBlockUtils.isAdClass(clazz.name, packages)
+        }
+    }
     private fun hookUi(classLoader: ClassLoader) {
         try {
             val viewGroupClass = classLoader.loadClass("android.view.ViewGroup")
             val addViewMethod = viewGroupClass.getDeclaredMethod("addView", View::class.java, ViewGroup.LayoutParams::class.java)
             hook(addViewMethod).intercept { chain ->
                 val view = chain.args[0] as? View
-                if (view != null && AdBlockUtils.isAdClass(view.javaClass.name, dynamicPackages)) {
+                if (view != null && isAdView(view)) {
                     Log.d(TAG, "UI blocking: Hiding ${view.javaClass.name}")
                     recursiveHide(view)
                 }
@@ -247,8 +262,8 @@ class MainHook : XposedModule() {
             try {
                 val viewClass = classLoader.loadClass("android.view.View")
                 hook(viewClass.getDeclaredMethod("setVisibility", Int::class.javaPrimitiveType)).intercept { chain ->
-                    val view = chain.thisObject as View
-                    if (AdBlockUtils.isAdClass(view.javaClass.name, dynamicPackages)) {
+                    val view = chain.thisObject as? View
+                    if (view != null && isAdView(view)) {
                         chain.args[0] = View.GONE
                     }
                     chain.proceed()
@@ -388,17 +403,19 @@ class MainHook : XposedModule() {
             hook(onCreateMethod).intercept { chain ->
                 val activity = chain.thisObject as Activity
                 val className = activity.javaClass.name
-                if (AdBlockUtils.isAdClass(className, dynamicPackages)) {
+                val packages = dynamicPackages
+                if (AdBlockUtils.isAdClass(className, packages)) {
                     Log.d(TAG, "Nuclear: Killing ad activity $className")
+                    val result = chain.proceed()
                     activity.finish()
-                    return@intercept null
+                    return@intercept result
                 }
                 chain.proceed()
             }
         } catch (_: Exception) {}
     }
     private fun isAdDomain(host: String): Boolean {
-        return dynamicDomains.any { host.contains(it, ignoreCase = true) }
+        return AdBlockUtils.isAdDomain(host, dynamicDomains)
     }
     private fun isAdIntent(intent: Intent): Boolean {
         val data = try { intent.dataString?.lowercase() ?: "" } catch (_: Exception) { "" }
@@ -409,8 +426,9 @@ class MainHook : XposedModule() {
             intent.component?.packageName == "com.android.vending") {
             return false
         }
-        val blocked = AdBlockUtils.isAdClass(componentName, dynamicPackages) ||
-                      AdBlockUtils.isAdClass(componentPkg, dynamicPackages)
+        val packages = dynamicPackages
+        val blocked = AdBlockUtils.isAdClass(componentName, packages) ||
+                      AdBlockUtils.isAdClass(componentPkg, packages)
         if (blocked) {
             Log.i(TAG, "Intent blocking: data=$data, component=$componentName")
         }
