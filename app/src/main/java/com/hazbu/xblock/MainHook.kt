@@ -4,14 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
-import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import io.github.libxposed.api.XposedModule
@@ -86,7 +83,6 @@ class MainHook : XposedModule() {
                 }
                 statusCursor.close()
             }
-            showToast(context, "xBlock active : $count filter")
             val loadedDomains = fetchSetFromProvider(context, "domains")
             if (loadedDomains.isNotEmpty()) {
                 dynamicDomains = loadedDomains
@@ -133,12 +129,6 @@ class MainHook : XposedModule() {
             }
         }
         return result
-    }
-    @Suppress("UNUSED_PARAMETER", "SameParameterValue")
-    private fun showToast(context: Context, msg: String) {
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
     }
     private fun hookDns(classLoader: ClassLoader) {
         try {
@@ -205,8 +195,8 @@ class MainHook : XposedModule() {
                 if (address != null) {
                     val host = address.hostString 
                     if (isAdDomain(host)) {
-                        Log.d(TAG, "Socket blocking (Silent): $host")
-                        return@intercept null 
+                        Log.d(TAG, "Socket blocking: $host")
+                        throw java.net.ConnectException("Connection refused (xBlock)")
                     }
                 }
                 chain.proceed()
@@ -405,8 +395,9 @@ class MainHook : XposedModule() {
                 val className = activity.javaClass.name
                 val packages = dynamicPackages
                 if (AdBlockUtils.isAdClass(className, packages)) {
-                    Log.d(TAG, "Nuclear: Killing ad activity $className")
+                    Log.d(TAG, "Nuclear: Finishing ad activity $className")
                     val result = chain.proceed()
+                    activity.setResult(Activity.RESULT_OK)
                     activity.finish()
                     return@intercept result
                 }
@@ -418,21 +409,23 @@ class MainHook : XposedModule() {
         return AdBlockUtils.isAdDomain(host, dynamicDomains)
     }
     private fun isAdIntent(intent: Intent): Boolean {
-        val data = try { intent.dataString?.lowercase() ?: "" } catch (_: Exception) { "" }
-        val component = intent.component
-        val componentName = component?.className ?: ""
-        val componentPkg = component?.packageName ?: ""
-        if (data.contains("play.google.com/store/apps/details?id=") && 
-            intent.component?.packageName == "com.android.vending") {
+        // Never block internal app activities (doing so causes games like Unity to freeze waiting for ad dismiss callbacks)
+        if (intent.component != null) {
             return false
         }
-        val packages = dynamicPackages
-        val blocked = AdBlockUtils.isAdClass(componentName, packages) ||
-                      AdBlockUtils.isAdClass(componentPkg, packages)
-        if (blocked) {
-            Log.i(TAG, "Intent blocking: data=$data, component=$componentName")
+        val data = try { intent.dataString?.lowercase() ?: "" } catch (_: Exception) { "" }
+        val action = intent.action ?: ""
+
+        // Block external view redirects to ad domains or ad tracker urls
+        if (action == Intent.ACTION_VIEW) {
+            val uri = intent.data
+            val host = uri?.host
+            if (host != null && isAdDomain(host)) {
+                Log.i(TAG, "Intent blocking: Ad redirect prevented ($host)")
+                return true
+            }
         }
-        return blocked
+        return false
     }
 }
 
