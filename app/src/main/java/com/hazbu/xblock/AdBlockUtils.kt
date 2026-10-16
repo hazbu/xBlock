@@ -1,8 +1,5 @@
 package com.hazbu.xblock
-import android.content.Context
-import com.hazbu.xblock.Constants.PREFS_NAME
 import org.json.JSONObject
-import java.io.File
 object AdBlockUtils {
     const val FILTER_URL = "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
     const val EXODUS_URL = "https://reports.exodus-privacy.eu.org/api/trackers"
@@ -66,23 +63,6 @@ object AdBlockUtils {
         if (className.isNullOrEmpty() || adPackages.isEmpty()) return false
         val lowerName = className.lowercase()
         return adPackages.any { lowerName.startsWith(it) }
-    }
-    fun fixPermissions(context: Context) {
-        try {
-            val dataDir = File(context.applicationInfo.dataDir)
-            dataDir.setExecutable(true, false)
-            val prefsDir = File(dataDir, "shared_prefs")
-            if (prefsDir.exists()) {
-                prefsDir.setExecutable(true, false)
-                @Suppress("SetWorldReadable")
-                prefsDir.setReadable(true, false)
-            }
-            val prefFile = File(prefsDir, "$PREFS_NAME.xml")
-            if (prefFile.exists()) {
-                @Suppress("SetWorldReadable")
-                prefFile.setReadable(true, false)
-            }
-        } catch (_: Exception) {}
     }
 }
 

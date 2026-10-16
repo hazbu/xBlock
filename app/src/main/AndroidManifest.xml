@@ -12,7 +12,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.xBlock"
-        tools:targetApi="35">
+        tools:targetApi="36">
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -29,10 +29,7 @@
             android:value="xBlock - Ad Blocker Module" />
         <meta-data
             android:name="xposedminversion"
-            android:value="101" />
-        <meta-data
-            android:name="xposedsharedprefs"
-            android:value="true" />
+            android:value="102" />
         <provider
             android:name=".AdBlockProvider"
             android:authorities="com.hazbu.xblock.provider"
